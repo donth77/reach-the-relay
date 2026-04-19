@@ -1,8 +1,7 @@
 import * as Phaser from 'phaser';
 import { ROUTES } from '../data/routes';
 import { startRun } from '../state/run';
-
-const FONT = 'Silkscreen, monospace';
+import { FONT } from '../util/ui';
 
 interface SceneData {
   party?: string[];
@@ -49,8 +48,8 @@ export class RouteScene extends Phaser.Scene {
         route.difficulty === 'easy'
           ? '#aaffaa'
           : route.difficulty === 'medium'
-          ? '#ffdd88'
-          : '#ff8a8a';
+            ? '#ffdd88'
+            : '#ff8a8a';
 
       this.add
         .text(width / 2 - 360, y - 20, route.name, {

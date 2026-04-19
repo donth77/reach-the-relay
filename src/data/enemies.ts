@@ -22,6 +22,8 @@ export interface EnemyDef {
   // visually larger sprites that need more space (e.g. nanite cluster, wreckling)
   // so neighbors don't overlap. Defaults to 1 (no change).
   formationSpread?: number;
+  // Short description shown in the enemy hover tooltip.
+  description?: string;
 }
 
 export const ENEMIES: Record<string, EnemyDef> = {
@@ -38,6 +40,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
     vulnerability: 'thermal',
     behavior: 'random',
     attackSfxKey: 'sfx-sentry-attack',
+    description:
+      'Tripod turret with a fire-resistant armor. Heavy frontal plating. Thermal vulnerability.',
   },
   spider: {
     id: 'spider',
@@ -53,6 +57,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
     vulnerability: 'coolant',
     behavior: 'random',
     attackSfxKey: 'sfx-spider-attack',
+    description:
+      'Fast scuttler with hydraulic fluid lines. Coolant freezes its joints. Coolant vulnerability.',
   },
   wirehead: {
     id: 'wirehead',
@@ -67,6 +73,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
     vulnerability: 'surge',
     behavior: 'target-escort',
     attackSfxKey: 'sfx-wirehead-attack',
+    description:
+      "Former human, wired into the Censor's grid. Hunts NPCs — always targets the escort. Surge vulnerability.",
   },
   scoutdrone: {
     id: 'scoutdrone',
@@ -82,6 +90,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     behavior: 'random',
     formationSpread: 0.2,
     attackSfxKey: 'sfx-scoutdrone-attack',
+    description: 'Small aerial recon bot. Fast but fragile. Surge vulnerability.',
   },
   naniteswarm: {
     id: 'naniteswarm',
@@ -97,6 +106,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
     behavior: 'multi-hit',
     formationSpread: 0.2,
     attackSfxKey: 'sfx-naniteswarm-attack',
+    description:
+      'Swarm of bio-mechanical nanobots. Hits the whole party each turn for reduced damage. Thermal vulnerability.',
   },
   wreckling: {
     id: 'wreckling',
@@ -112,12 +123,14 @@ export const ENEMIES: Record<string, EnemyDef> = {
     behavior: 'ignore-guard',
     bossMusicKey: 'music-route-substation-boss',
     attackSfxKey: 'sfx-wreckling-attack',
+    description:
+      'Elite Censor unit. Massive frame, ignores GUARD. Only TAUNT can force its target. Surge vulnerability.',
   },
 };
 
 export const VULNERABILITY_GLYPH: Record<Element, string> = {
   thermal: '🔥',
-  coolant: '❄',
-  surge: '⚡',
+  coolant: '❄\uFE0F',
+  surge: '⚡\uFE0F',
   none: '',
 };

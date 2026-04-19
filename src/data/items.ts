@@ -31,7 +31,7 @@ export const ITEMS: Record<string, ItemDef> = {
   adrenaline: {
     id: 'adrenaline',
     label: 'ADRENALINE',
-    description: 'Revive a KO\'d party member at 25% HP.',
+    description: "Revive a KO'd party member at 25% HP.",
     target: 'ko-ally',
     effect: 'revive',
     power: 0.25,

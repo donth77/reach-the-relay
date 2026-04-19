@@ -36,7 +36,7 @@ export class BootScene extends Phaser.Scene {
       vanguard: 6,
       netrunner: 6,
       medic: 3, // lead-jab (STRIKE)
-      scavenger: 6,
+      scavenger: 4, // custom wrench overhead-swing
       cybermonk: 3, // lead-jab (replaces cross-punch that had the red-lips issue)
     };
 
@@ -49,15 +49,17 @@ export class BootScene extends Phaser.Scene {
           `assets/sprites/party/${key}/anim/attack-west/frame_${padded}.png`,
         );
       }
-      for (let i = 0; i < 4; i++) {
+      const walkFrames = key === 'cybermonk' || key === 'scavenger' ? 6 : 4;
+      for (let i = 0; i < walkFrames; i++) {
         const padded = i.toString().padStart(3, '0');
         this.load.image(
           `${key}-walk-west-${padded}`,
           `assets/sprites/party/${key}/anim/walk-west/frame_${padded}.png`,
         );
       }
-      // All party have 7-frame death animations + dedicated downed sprite
-      for (let i = 0; i < 7; i++) {
+      // Per-character death frame counts (most are 7; scavenger + cybermonk custom are 4)
+      const deathFrames = key === 'scavenger' || key === 'cybermonk' ? 4 : 7;
+      for (let i = 0; i < deathFrames; i++) {
         const padded = i.toString().padStart(3, '0');
         this.load.image(
           `${key}-death-west-${padded}`,
@@ -229,15 +231,27 @@ export class BootScene extends Phaser.Scene {
     }
 
     this.load.image('bg-overgrown-highway', 'assets/backgrounds/combat/overgrown_highway.webp');
-    this.load.image('bg-overgrown-highway-tunnel', 'assets/backgrounds/combat/overgrown_highway_tunnel.webp');
-    this.load.image('bg-overgrown-highway-gas', 'assets/backgrounds/combat/overgrown_highway_gas.webp');
+    this.load.image(
+      'bg-overgrown-highway-tunnel',
+      'assets/backgrounds/combat/overgrown_highway_tunnel.webp',
+    );
+    this.load.image(
+      'bg-overgrown-highway-gas',
+      'assets/backgrounds/combat/overgrown_highway_gas.webp',
+    );
     this.load.image('bg-mall-atrium', 'assets/backgrounds/combat/mall_atrium.webp');
     this.load.image('bg-mall-atrium-garage', 'assets/backgrounds/combat/mall_atrium_garage.webp');
     this.load.image('bg-mall-atrium-dept', 'assets/backgrounds/combat/mall_atrium_dept.webp');
     this.load.image('bg-dead-substation', 'assets/backgrounds/combat/dead_substation.webp');
-    this.load.image('bg-dead-substation-transformer', 'assets/backgrounds/combat/dead_substation_transformer.webp');
+    this.load.image(
+      'bg-dead-substation-transformer',
+      'assets/backgrounds/combat/dead_substation_transformer.webp',
+    );
 
-    this.load.audio('music-route-overgrown-bridge', 'assets/audio/music/route-overgrown-bridge.mp3');
+    this.load.audio(
+      'music-route-overgrown-bridge',
+      'assets/audio/music/route-overgrown-bridge.mp3',
+    );
     this.load.audio(
       'music-route-overgrown-bridge-alt',
       'assets/audio/music/route-overgrown-bridge-alt.mp3',

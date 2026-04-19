@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser';
 import { CLASSES } from '../data/classes';
 import { endRun, getRun, ESCORT_MAX_HP } from '../state/run';
-
-const FONT = 'Silkscreen, monospace';
+import { FONT } from '../util/ui';
+import { stopAllMusic } from '../util/audio';
 
 interface SceneData {
   outcome?: 'victory' | 'defeat';
@@ -26,10 +26,7 @@ export class RunCompleteScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const run = getRun();
 
-    // Stop any route/boss music that's still playing.
-    for (const s of this.sound.getAllPlaying()) {
-      if (s.key?.startsWith('music-')) s.stop();
-    }
+    stopAllMusic(this);
     this.registry.remove('currentRouteMusic');
 
     this.cameras.main.setBackgroundColor(this.outcome === 'victory' ? '#14281e' : '#281414');

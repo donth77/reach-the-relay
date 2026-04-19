@@ -1,8 +1,7 @@
 import * as Phaser from 'phaser';
 import { CLASSES } from '../data/classes';
 import { getRun, ESCORT_MAX_HP } from '../state/run';
-
-const FONT = 'Silkscreen, monospace';
+import { FONT } from '../util/ui';
 
 const HEAL_HP_PCT = 0.3;
 const HEAL_MP_PCT = 0.2;

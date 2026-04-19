@@ -19,6 +19,7 @@ export type AbilityEffectKind =
 export interface AbilityDef {
   id: string;
   label: string;
+  description?: string;
   mpCost: number;
   target: TargetType;
   effect: AbilityEffectKind;
@@ -51,10 +52,45 @@ export const CLASSES: Record<string, ClassDef> = {
     speed: 4,
     mp: 0,
     abilities: [
-      { id: 'fight', label: 'FIGHT', mpCost: 0, target: 'enemy', effect: 'damage', power: 1 },
-      { id: 'guard', label: 'GUARD', mpCost: 0, target: 'self', effect: 'guard', sfxKey: 'sfx-vanguard-guard', maxUsesPerCombat: 2 },
-      { id: 'taunt', label: 'TAUNT', mpCost: 0, target: 'enemy', effect: 'taunt', sfxKey: 'sfx-vanguard-taunt', maxUsesPerCombat: 2 },
-      { id: 'item', label: 'ITEM', mpCost: 0, target: 'self', effect: 'item' },
+      {
+        id: 'fight',
+        label: 'FIGHT',
+        description: 'Basic melee attack. Deal physical damage to one enemy.',
+        mpCost: 0,
+        target: 'enemy',
+        effect: 'damage',
+        power: 1,
+      },
+      {
+        id: 'guard',
+        label: 'GUARD',
+        description:
+          'Intercept every enemy attack until your next turn — damage redirected to you and halved. Wreckling ignores this.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'guard',
+        sfxKey: 'sfx-vanguard-guard',
+        maxUsesPerCombat: 2,
+      },
+      {
+        id: 'taunt',
+        label: 'TAUNT',
+        description:
+          'Force one enemy to attack you next turn. Works on bosses. Full damage, no halving.',
+        mpCost: 0,
+        target: 'enemy',
+        effect: 'taunt',
+        sfxKey: 'sfx-vanguard-taunt',
+        maxUsesPerCombat: 2,
+      },
+      {
+        id: 'item',
+        label: 'ITEM',
+        description: 'Use a consumable from shared party inventory.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'item',
+      },
     ],
   },
   netrunner: {
@@ -70,6 +106,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'jack',
         label: 'JACK',
+        description: 'Quick remote hack. Weak damage, no MP cost.',
         mpCost: 0,
         target: 'enemy',
         effect: 'damage',
@@ -79,6 +116,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'overload',
         label: 'OVERLOAD',
+        description: 'Thermal overload attack. Heavy damage to one enemy. 🔥',
         mpCost: 5,
         target: 'enemy',
         effect: 'damage',
@@ -89,6 +127,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'frostlock',
         label: 'FROSTLOCK',
+        description: 'Coolant freeze. Damages and halves target ATB speed for 2 turns. ❄\uFE0F',
         mpCost: 5,
         target: 'enemy',
         effect: 'slow',
@@ -99,6 +138,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'surge',
         label: 'SURGE',
+        description: 'Electric surge. Heavy damage to one enemy. ⚡\uFE0F',
         mpCost: 7,
         target: 'enemy',
         effect: 'damage',
@@ -109,12 +149,20 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'standby',
         label: 'STANDBY',
+        description: 'Force one enemy into sleep. They skip turns until damaged.',
         mpCost: 4,
         target: 'enemy',
         effect: 'sleep',
         sfxKey: 'sfx-netrunner-standby',
       },
-      { id: 'item', label: 'ITEM', mpCost: 0, target: 'self', effect: 'item' },
+      {
+        id: 'item',
+        label: 'ITEM',
+        description: 'Use a consumable from shared party inventory.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'item',
+      },
     ],
   },
   medic: {
@@ -127,10 +175,19 @@ export const CLASSES: Record<string, ClassDef> = {
     speed: 5,
     mp: 28,
     abilities: [
-      { id: 'strike', label: 'STRIKE', mpCost: 0, target: 'enemy', effect: 'damage', power: 0.4 },
+      {
+        id: 'strike',
+        label: 'STRIKE',
+        description: 'Weak melee attack. No MP cost.',
+        mpCost: 0,
+        target: 'enemy',
+        effect: 'damage',
+        power: 0.4,
+      },
       {
         id: 'patch',
         label: 'PATCH',
+        description: 'Heal 25 HP to one ally or Dr. Vey.',
         mpCost: 4,
         target: 'ally-or-escort',
         effect: 'heal',
@@ -140,6 +197,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'pulse',
         label: 'PULSE',
+        description: 'Anti-machine pulse. 1.5× damage vs robotic, 0.5× vs hybrid. Ignores defense.',
         mpCost: 5,
         target: 'enemy',
         effect: 'pulse',
@@ -149,6 +207,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'stim',
         label: 'STIM',
+        description: "Double an ally's ATB fill rate for 1 turn.",
         mpCost: 6,
         target: 'ally-or-escort',
         effect: 'boost',
@@ -157,12 +216,21 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'shield',
         label: 'SHIELD',
+        description:
+          'Halve damage taken by one ally until their next turn. Works even against Wreckling.',
         mpCost: 5,
         target: 'ally-or-escort',
         effect: 'shield-buff',
         sfxKey: 'sfx-medic-shield',
       },
-      { id: 'item', label: 'ITEM', mpCost: 0, target: 'self', effect: 'item' },
+      {
+        id: 'item',
+        label: 'ITEM',
+        description: 'Use a consumable from shared party inventory.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'item',
+      },
     ],
   },
   scavenger: {
@@ -175,10 +243,20 @@ export const CLASSES: Record<string, ClassDef> = {
     speed: 8,
     mp: 0,
     abilities: [
-      { id: 'slice', label: 'SLICE', mpCost: 0, target: 'enemy', effect: 'damage', power: 0.8 },
+      {
+        id: 'slice',
+        label: 'SLICE',
+        description: 'Fast melee attack. No MP cost.',
+        mpCost: 0,
+        target: 'enemy',
+        effect: 'damage',
+        power: 0.8,
+      },
       {
         id: 'salvage',
         label: 'SALVAGE',
+        description:
+          'Scavenged strike: 50% chance to deal double damage, 25% chance to salvage a random item from the enemy. Max 3/combat.',
         mpCost: 0,
         target: 'enemy',
         effect: 'salvage',
@@ -186,7 +264,14 @@ export const CLASSES: Record<string, ClassDef> = {
         sfxKey: 'sfx-scavenger-salvage',
         maxUsesPerCombat: 3,
       },
-      { id: 'item', label: 'ITEM', mpCost: 0, target: 'self', effect: 'item' },
+      {
+        id: 'item',
+        label: 'ITEM',
+        description: 'Use a consumable from shared party inventory.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'item',
+      },
     ],
   },
   cybermonk: {
@@ -199,10 +284,44 @@ export const CLASSES: Record<string, ClassDef> = {
     speed: 5,
     mp: 0,
     abilities: [
-      { id: 'fight', label: 'FIGHT', mpCost: 0, target: 'enemy', effect: 'damage', power: 1 },
-      { id: 'focus', label: 'FOCUS', mpCost: 0, target: 'self', effect: 'heal', power: 18, sfxKey: 'sfx-cybermonk-focus' },
-      { id: 'flurry', label: 'FLURRY', mpCost: 0, target: 'enemy', effect: 'flurry', power: 0.6, sfxKey: 'sfx-cybermonk-flurry' },
-      { id: 'item', label: 'ITEM', mpCost: 0, target: 'self', effect: 'item' },
+      {
+        id: 'fight',
+        label: 'FIGHT',
+        description: 'Basic melee attack. Deal physical damage to one enemy.',
+        mpCost: 0,
+        target: 'enemy',
+        effect: 'damage',
+        power: 1,
+      },
+      {
+        id: 'focus',
+        label: 'FOCUS',
+        description: 'Meditate to restore 18 HP to yourself. No MP cost.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'heal',
+        power: 18,
+        sfxKey: 'sfx-cybermonk-focus',
+      },
+      {
+        id: 'flurry',
+        label: 'FLURRY',
+        description:
+          'Three rapid strikes on one enemy. Each hit deals reduced damage but can crit.',
+        mpCost: 0,
+        target: 'enemy',
+        effect: 'flurry',
+        power: 0.6,
+        sfxKey: 'sfx-cybermonk-flurry',
+      },
+      {
+        id: 'item',
+        label: 'ITEM',
+        description: 'Use a consumable from shared party inventory.',
+        mpCost: 0,
+        target: 'self',
+        effect: 'item',
+      },
     ],
   },
 };

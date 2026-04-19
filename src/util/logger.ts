@@ -9,8 +9,7 @@
 //   - unset   → defaults to enabled in `vite dev`, disabled in production build
 
 const envFlag = import.meta.env.VITE_DEBUG_LOG as string | undefined;
-const DEBUG_ENABLED =
-  envFlag === 'true' || (envFlag !== 'false' && import.meta.env.DEV);
+const DEBUG_ENABLED = envFlag === 'true' || (envFlag !== 'false' && import.meta.env.DEV);
 
 const BUFFER_SIZE = 500;
 const buffer: string[] = [];
@@ -27,7 +26,7 @@ export function log(tag: string, msg: string, data?: Record<string, unknown>): v
   const line = `[${timestamp()}] [${tag}] ${msg}${dataStr}`;
   buffer.push(line);
   if (buffer.length > BUFFER_SIZE) buffer.shift();
-  // eslint-disable-next-line no-console
+   
   console.log(line);
 }
 

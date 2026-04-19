@@ -41,8 +41,13 @@ src/
     routes.ts             route defs (encounters, rest stops, bg variants, music, Y offsets)
   state/
     run.ts                active-run state (party, route, encounter index, HP tracking)
+  combat/
+    types.ts              Unit interface, Side type, ATB/PANEL/DEPTH/DIMMED constants
+    helpers.ts            pure helpers: calculateDamage, getUnitFacing, validTargets, validItemTargets
   util/
     logger.ts             in-memory ring-buffer logger (L key copies to clipboard)
+    ui.ts                 shared FONT constant
+    audio.ts              stopAllMusic(scene) — defensive music-stop used by Lobby + RunComplete
 public/
   assets/
     sprites/              SpriteCook-generated sprites + extracted animation frames
@@ -58,7 +63,7 @@ public/
 
 - Every scene uses `this.cameras.main.setBackgroundColor(...)` for its base color
 - Scene transitions via `this.scene.start('SceneKey', data)`; state persists via `state/run.ts` singleton
-- In `CombatScene`, the unit model is a plain `Unit` interface in the same file (not ECS)
+- The unit model is a plain `Unit` interface in `src/combat/types.ts` (not ECS), imported by `CombatScene`
 
 ### Music
 
@@ -66,7 +71,7 @@ public/
 - Each route has `musicKeys: string[]` (randomly picked per combat); boss encounters can set `bossMusicKey` on enemy def to override
 - Single "currently playing" track tracked via `this.registry.get('currentRouteMusic')`
 - Lobby + Route use `music-main-theme` (same across both)
-- **`RunCompleteScene` and `LobbyScene` stop ANY playing `music-*` sound on enter** (defensive — registry tracking can desync if sounds were started without setting it). Lobby then starts main theme. Same defensive pattern lives in `CombatScene` when switching tracks.
+- **`RunCompleteScene` and `LobbyScene` stop ANY playing `music-*` sound on enter** via `stopAllMusic(this)` from `util/audio.ts` (defensive — registry tracking can desync if sounds were started without setting it). Lobby then starts main theme. Same defensive pattern lives in `CombatScene` when switching tracks.
 
 ### SFX
 

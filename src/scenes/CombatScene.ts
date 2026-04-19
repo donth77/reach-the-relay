@@ -1,82 +1,29 @@
 import * as Phaser from 'phaser';
-import {
-  CLASSES,
-  type AbilityDef,
-  type ClassDef,
-  type Element,
-} from '../data/classes';
-import { ENEMIES, VULNERABILITY_GLYPH, type EnemyDef } from '../data/enemies';
+import { CLASSES, type AbilityDef, type ClassDef, type Element } from '../data/classes';
+import { ENEMIES, VULNERABILITY_GLYPH } from '../data/enemies';
 import { ITEMS, ITEM_ORDER, type ItemDef } from '../data/items';
 import { getRun, hasRun, ESCORT_MAX_HP } from '../state/run';
 import type { BackgroundVariant } from '../data/routes';
 import { log, copyLogToClipboard } from '../util/logger';
-
-const FONT = 'Silkscreen, monospace';
-const ATB_MAX = 100;
-const ATB_RATE = 7;
-
-const PANEL_HEIGHT = 200;
-const PANEL_MARGIN = 10;
-const PANEL_TOP = 720 - PANEL_HEIGHT;
-const PANEL_BG = 0x101828;
-const PANEL_BORDER = 0x6a7fad;
-
-// Depth tiers — each sprite gets a base + its Y so sprites with higher Y
-// (lower on screen, closer to camera) render on top of sprites with lower Y.
-const DEPTH_ENEMY_BASE = 5000;
-const DEPTH_ENEMY_ACTIVE_BASE = 7500; // enemy during its attack sequence: above other enemies
-const DEPTH_PARTY_BASE = 10000;
-const DEPTH_WALK_FORWARD_BASE = 50000; // above everything during walk-forward + attack
-
-const DIMMED_OTHER_ALPHA = 0.3;
-const DIMMED_PEER_ENEMY_ALPHA = 0.35;
-
-type Side = 'party' | 'enemy' | 'escort';
-
-interface Unit {
-  id: string;
-  name: string;
-  side: Side;
-  classDef?: ClassDef;
-  enemyDef?: EnemyDef;
-  spriteKey: string;
-  scale: number;
-  hp: number;
-  maxHp: number;
-  mp: number;
-  maxMp: number;
-  attack: number;
-  defense: number;
-  speed: number;
-  atb: number;
-  ko: boolean;
-  guarding: boolean;
-  sleeping: boolean;
-  tauntedBy: string | null;
-  atbModifier: number;
-  atbModifierTurnsLeft: number;
-  shielded: boolean;
-  missing: boolean;
-  posX: number;
-  posY: number;
-  sprite?: Phaser.GameObjects.Sprite;
-  idleTween?: Phaser.Tweens.Tween;
-  shadow?: Phaser.GameObjects.Ellipse;
-  nameText?: Phaser.GameObjects.Text;
-  enemyHpBarBg?: Phaser.GameObjects.Rectangle;
-  enemyHpBar?: Phaser.GameObjects.Rectangle;
-  vulnerabilityIcon?: Phaser.GameObjects.Text;
-  statusIcon?: Phaser.GameObjects.Text;
-  panelRow?: {
-    container: Phaser.GameObjects.Container;
-    nameText: Phaser.GameObjects.Text;
-    hpText: Phaser.GameObjects.Text;
-    hpBar: Phaser.GameObjects.Rectangle;
-    mpText?: Phaser.GameObjects.Text;
-    atbBar?: Phaser.GameObjects.Rectangle;
-    activeMarker: Phaser.GameObjects.Text;
-  };
-}
+import { FONT } from '../util/ui';
+import {
+  ATB_MAX,
+  ATB_RATE,
+  PANEL_HEIGHT,
+  PANEL_MARGIN,
+  PANEL_TOP,
+  PANEL_BG,
+  PANEL_BORDER,
+  DEPTH_ENEMY_BASE,
+  DEPTH_ENEMY_ACTIVE_BASE,
+  DEPTH_PARTY_BASE,
+  DEPTH_WALK_FORWARD_BASE,
+  DIMMED_OTHER_ALPHA,
+  DIMMED_PEER_ENEMY_ALPHA,
+  type Side,
+  type Unit,
+} from '../combat/types';
+import { calculateDamage, getUnitFacing, validTargets, validItemTargets } from '../combat/helpers';
 
 export class CombatScene extends Phaser.Scene {
   private units: Unit[] = [];
@@ -124,7 +71,8 @@ export class CombatScene extends Phaser.Scene {
 
     const variants = run.route.backgroundVariants ?? [run.route.backgroundKey];
     const picked = variants[Math.floor(Math.random() * variants.length)];
-    const bgVariant = typeof picked === 'string' ? { key: picked } : (picked ?? { key: run.route.backgroundKey });
+    const bgVariant =
+      typeof picked === 'string' ? { key: picked } : (picked ?? { key: run.route.backgroundKey });
     this.activeBgVariant = bgVariant;
     if (this.textures.exists(bgVariant.key)) {
       this.add
@@ -246,7 +194,7 @@ export class CombatScene extends Phaser.Scene {
       vanguard: 6,
       netrunner: 6,
       medic: 3, // lead-jab
-      scavenger: 6,
+      scavenger: 4, // custom wrench overhead-swing
       cybermonk: 3, // lead-jab
     };
     const partyKeys = ['vanguard', 'netrunner', 'medic', 'scavenger', 'cybermonk'];
@@ -261,14 +209,16 @@ export class CombatScene extends Phaser.Scene {
       }
       const walkKey = `${key}-walk-west`;
       if (!this.anims.exists(walkKey)) {
-        const frames = Array.from({ length: 4 }, (_, i) => ({
+        const walkCount = key === 'cybermonk' || key === 'scavenger' ? 6 : 4;
+        const frames = Array.from({ length: walkCount }, (_, i) => ({
           key: `${key}-walk-west-${i.toString().padStart(3, '0')}`,
         }));
         this.anims.create({ key: walkKey, frames, frameRate: 8, repeat: -1 });
       }
       const deathKey = `${key}-death-west`;
       if (!this.anims.exists(deathKey)) {
-        const frames = Array.from({ length: 7 }, (_, i) => ({
+        const deathCount = key === 'scavenger' || key === 'cybermonk' ? 4 : 7;
+        const frames = Array.from({ length: deathCount }, (_, i) => ({
           key: `${key}-death-west-${i.toString().padStart(3, '0')}`,
         }));
         this.anims.create({ key: deathKey, frames, frameRate: 10, repeat: 0 });
@@ -412,10 +362,6 @@ export class CombatScene extends Phaser.Scene {
     }
   }
 
-  private getUnitFacing(u: Unit): 'west' | 'east' {
-    return u.side === 'enemy' ? 'east' : 'west';
-  }
-
   private buildDevOverlay(): void {
     this.devOverlay = this.add.container(0, 0);
     this.devOverlay.setVisible(false);
@@ -449,6 +395,16 @@ export class CombatScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    // Auto-hide the enemy tooltip if the hovered enemy starts moving (attack
+    // sequence, etc). Runs BEFORE the waitMode early return so it fires even
+    // while the player can't act.
+    if (this.enemyTooltipFor?.sprite) {
+      const u = this.enemyTooltipFor;
+      const sprite = u.sprite!;
+      const atHome = Math.abs(sprite.x - u.posX) < 2 && Math.abs(sprite.y - u.posY) < 2;
+      if (!atHome || u.ko) this.hideEnemyTooltip();
+    }
+
     if (this.combatOver || this.waitMode) return;
     const dt = delta / 1000;
     for (const u of this.units) {
@@ -469,7 +425,7 @@ export class CombatScene extends Phaser.Scene {
     const { width } = this.scale;
     const arenaHeight = PANEL_TOP;
     const partyX = width * 0.78;
-    const enemyX = width * 0.30; // moved closer to the party
+    const enemyX = width * 0.3; // moved closer to the party
     // Party and enemies use different vertical centers — tune each independently.
     const currentEncounter = run.route.encounters[run.encounterIndex];
     const partyCentreY =
@@ -702,15 +658,16 @@ export class CombatScene extends Phaser.Scene {
     // Per-sprite character bbox within its native canvas (from PIL analysis).
     // Used to (a) center the visible character at (posX, posY) via setOrigin and
     // (b) position shadow/HP bar relative to the character, not the canvas.
-    const BBOX: Record<number, { centerX: number; centerY: number; feetY: number; headY: number }> = {
-      64: { centerX: 32, centerY: 32, feetY: 56, headY: 6 },
-      68: { centerX: 34, centerY: 33, feetY: 57, headY: 9 },
-      80: { centerX: 40, centerY: 40, feetY: 74, headY: 6 },
-      82: { centerX: 41, centerY: 57, feetY: 82, headY: 32 },
-      84: { centerX: 42, centerY: 48, feetY: 84, headY: 12 },
-      92: { centerX: 46, centerY: 46, feetY: 88, headY: 4 },
-      136: { centerX: 62.5, centerY: 77.5, feetY: 133, headY: 22 },
-    };
+    const BBOX: Record<number, { centerX: number; centerY: number; feetY: number; headY: number }> =
+      {
+        64: { centerX: 32, centerY: 32, feetY: 56, headY: 6 },
+        68: { centerX: 34, centerY: 33, feetY: 57, headY: 9 },
+        80: { centerX: 40, centerY: 40, feetY: 74, headY: 6 },
+        82: { centerX: 41, centerY: 57, feetY: 82, headY: 32 },
+        84: { centerX: 42, centerY: 48, feetY: 84, headY: 12 },
+        92: { centerX: 46, centerY: 46, feetY: 88, headY: 4 },
+        136: { centerX: 62.5, centerY: 77.5, feetY: 133, headY: 22 },
+      };
     const bbox = BBOX[nativeCanvasSize] ?? BBOX[68];
     const originX = bbox.centerX / nativeCanvasSize;
     const originY = bbox.centerY / nativeCanvasSize;
@@ -722,10 +679,19 @@ export class CombatScene extends Phaser.Scene {
     // to the actual character bbox rather than the full sprite display width.
     const shadowWidth = spriteWidth * (isFloaty ? 0.28 : 0.32);
     const shadowHeight = shadowWidth * 0.32;
-    u.shadow = this.add
-      .ellipse(u.posX, shadowY, shadowWidth, shadowHeight, 0x000000, isFloaty ? 0.12 : 0.18);
+    u.shadow = this.add.ellipse(
+      u.posX,
+      shadowY,
+      shadowWidth,
+      shadowHeight,
+      0x000000,
+      isFloaty ? 0.12 : 0.18,
+    );
 
-    u.sprite = this.add.sprite(u.posX, u.posY, u.spriteKey).setScale(u.scale).setOrigin(originX, originY);
+    u.sprite = this.add
+      .sprite(u.posX, u.posY, u.spriteKey)
+      .setScale(u.scale)
+      .setOrigin(originX, originY);
     const baseDepth = (u.side === 'enemy' ? DEPTH_ENEMY_BASE : DEPTH_PARTY_BASE) + u.posY;
     u.sprite.setDepth(baseDepth);
     if (u.enemyDef?.flipSprite) u.sprite.setFlipX(true);
@@ -756,6 +722,10 @@ export class CombatScene extends Phaser.Scene {
           color: '#88ccff',
         })
         .setOrigin(1, 0.5);
+
+      // Enemy hover tooltip (shows name + HP + description). Suppressed
+      // automatically while target-select is active — see showEnemyTooltip.
+      this.attachEnemyTooltipHandlers(u);
     } else {
       u.statusIcon = this.add
         .text(u.posX + 40, u.posY - 50, '', {
@@ -765,6 +735,95 @@ export class CombatScene extends Phaser.Scene {
         })
         .setOrigin(0.5);
     }
+  }
+
+  private enemyTooltip?: Phaser.GameObjects.Container;
+  private enemyTooltipFor?: Unit;
+
+  private attachEnemyTooltipHandlers(u: Unit): void {
+    if (!u.sprite) return;
+    u.sprite.setInteractive();
+    u.sprite.on('pointerover', () => this.showEnemyTooltip(u));
+    u.sprite.on('pointerout', () => {
+      if (this.enemyTooltipFor === u) this.hideEnemyTooltip();
+    });
+  }
+
+  private showEnemyTooltip(u: Unit): void {
+    // Suppress when the player is picking a target — the target-select flow
+    // has its own highlight + chevron UI and the enemy tooltip would clutter it.
+    if (this.targetSelectActive || this.itemTargetSelectActive) return;
+    if (this.combatOver || u.ko) return;
+    if (!u.sprite || !u.enemyDef) return;
+
+    // Suppress while the enemy is mid-animation (walking to attack, attacking,
+    // walking back, hit-shake). If the sprite is away from its home position,
+    // it's in a sequence and the tooltip would anchor to a moving target.
+    const atHome = Math.abs(u.sprite.x - u.posX) < 2 && Math.abs(u.sprite.y - u.posY) < 2;
+    if (!atHome) return;
+
+    this.hideEnemyTooltip();
+
+    const def = u.enemyDef;
+    const hpPct = u.maxHp > 0 ? Math.round((u.hp / u.maxHp) * 100) : 0;
+    const header = def.name.toUpperCase();
+    const hpLine = `HP ${u.hp} / ${u.maxHp}  (${hpPct}%)`;
+    const desc = def.description ?? '';
+
+    const TOOLTIP_MAX_WIDTH = 300;
+    const PADDING = 10;
+
+    const headerTxt = this.add.text(0, 0, header, {
+      fontFamily: FONT,
+      fontSize: '15px',
+      color: '#ffd488',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    const hpTxt = this.add.text(0, 0, hpLine, {
+      fontFamily: FONT,
+      fontSize: '12px',
+      color: '#cfe8e8',
+    });
+    const descTxt = this.add.text(0, 0, desc, {
+      fontFamily: FONT,
+      fontSize: '12px',
+      color: '#a0bcbc',
+      wordWrap: { width: TOOLTIP_MAX_WIDTH - PADDING * 2 },
+    });
+
+    // Lay out vertically (header, hp, description).
+    headerTxt.setPosition(PADDING, PADDING);
+    hpTxt.setPosition(PADDING, PADDING + headerTxt.height + 2);
+    descTxt.setPosition(PADDING, PADDING + headerTxt.height + 2 + hpTxt.height + 4);
+
+    const contentWidth = Math.min(
+      TOOLTIP_MAX_WIDTH,
+      Math.max(headerTxt.width, hpTxt.width, descTxt.width) + PADDING * 2,
+    );
+    const contentHeight = descTxt.y + descTxt.height + PADDING;
+
+    const bg = this.add
+      .rectangle(0, 0, contentWidth, contentHeight, 0x0a1820, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x3a5a6a, 0.8);
+
+    // Position container above the enemy sprite, centered on its x.
+    const sprite = u.sprite;
+    const spriteTop = sprite.y - sprite.displayHeight / 2;
+    const tooltipX = sprite.x - contentWidth / 2;
+    const tooltipY = spriteTop - contentHeight - 12;
+    const container = this.add.container(tooltipX, tooltipY, [bg, headerTxt, hpTxt, descTxt]);
+    container.setDepth(150000);
+
+    this.enemyTooltip = container;
+    this.enemyTooltipFor = u;
+  }
+
+  private hideEnemyTooltip(): void {
+    this.enemyTooltip?.destroy();
+    this.enemyTooltip = undefined;
+    this.enemyTooltipFor = undefined;
   }
 
   private updateEnemyHpBar(u: Unit): void {
@@ -808,7 +867,14 @@ export class CombatScene extends Phaser.Scene {
     const { width } = this.scale;
 
     this.add
-      .rectangle(width / 2, PANEL_TOP + PANEL_HEIGHT / 2, width - 20, PANEL_HEIGHT - 10, PANEL_BG, 0.95)
+      .rectangle(
+        width / 2,
+        PANEL_TOP + PANEL_HEIGHT / 2,
+        width - 20,
+        PANEL_HEIGHT - 10,
+        PANEL_BG,
+        0.95,
+      )
       .setOrigin(0.5)
       .setStrokeStyle(3, PANEL_BORDER);
 
@@ -884,23 +950,15 @@ export class CombatScene extends Phaser.Scene {
         })
         .setOrigin(1, 0.5);
 
-      this.add
-        .rectangle(COL_HP_BAR, 0, HP_BAR_WIDTH, 10, 0x222222)
-        .setOrigin(0, 0.5);
-      const hpBar = this.add
-        .rectangle(COL_HP_BAR, 0, HP_BAR_WIDTH, 10, 0xff5555)
-        .setOrigin(0, 0.5);
+      this.add.rectangle(COL_HP_BAR, 0, HP_BAR_WIDTH, 10, 0x222222).setOrigin(0, 0.5);
+      const hpBar = this.add.rectangle(COL_HP_BAR, 0, HP_BAR_WIDTH, 10, 0xff5555).setOrigin(0, 0.5);
 
       let mpText: Phaser.GameObjects.Text | undefined;
       let atbBar: Phaser.GameObjects.Rectangle | undefined;
 
       if (u.side !== 'escort') {
-        this.add
-          .rectangle(COL_ATB_BAR, 0, ATB_BAR_WIDTH, 8, 0x222222)
-          .setOrigin(0, 0.5);
-        atbBar = this.add
-          .rectangle(COL_ATB_BAR, 0, 0, 8, 0xffdd55)
-          .setOrigin(0, 0.5);
+        this.add.rectangle(COL_ATB_BAR, 0, ATB_BAR_WIDTH, 8, 0x222222).setOrigin(0, 0.5);
+        atbBar = this.add.rectangle(COL_ATB_BAR, 0, 0, 8, 0xffdd55).setOrigin(0, 0.5);
 
         if (u.maxMp > 0) {
           mpText = this.add
@@ -981,7 +1039,7 @@ export class CombatScene extends Phaser.Scene {
     const { width } = this.scale;
     const leftWidth = width * 0.5;
     this.actionMenuContainer?.destroy();
-    this.actionMenuContainer = this.add.container(0, 0);
+    this.actionMenuContainer = this.add.container(0, 0).setDepth(150000);
 
     const abilities = u.classDef?.abilities ?? [];
     const cols = 2;
@@ -990,6 +1048,26 @@ export class CombatScene extends Phaser.Scene {
     const btnGap = 8;
     const startX = 30;
     const startY = PANEL_TOP + 45;
+
+    // Description tooltip positioned just above the bottom panel so it never
+    // overlaps the panel's "ACTION" header. Updates on hover.
+    const descText = this.add
+      .text(startX, PANEL_TOP - 12, '', {
+        fontFamily: FONT,
+        fontSize: '14px',
+        color: '#cfe8e8',
+        backgroundColor: '#0a1820cc',
+        padding: { x: 8, y: 4 },
+        wordWrap: { width: leftWidth - 60 },
+      })
+      .setOrigin(0, 1)
+      .setDepth(150000);
+    this.actionMenuContainer.add(descText);
+
+    const chevrons: Phaser.GameObjects.Text[] = [];
+    const bgs: { el: Phaser.GameObjects.Rectangle; baseFill: number }[] = [];
+    const BASE_FILL = 0x1a2a3a;
+    const HOVER_FILL = 0x2a4252;
 
     abilities.forEach((ability, i) => {
       const col = i % cols;
@@ -1004,8 +1082,9 @@ export class CombatScene extends Phaser.Scene {
       const hasUses = usesRemaining === null || usesRemaining > 0;
       const canAfford = u.mp >= ability.mpCost && hasUses;
       const bg = this.add
-        .rectangle(x, y, btnWidth, btnHeight, 0x1a2a3a, 0.9)
+        .rectangle(x, y, btnWidth, btnHeight, BASE_FILL, 0.9)
         .setStrokeStyle(2, canAfford ? 0x88ff88 : 0x444444);
+      bgs.push({ el: bg, baseFill: BASE_FILL });
       let label = ability.label;
       if (ability.mpCost > 0) label += `  (${ability.mpCost})`;
       if (usesRemaining !== null) label += `  [${usesRemaining}/${ability.maxUsesPerCombat}]`;
@@ -1018,14 +1097,37 @@ export class CombatScene extends Phaser.Scene {
         })
         .setOrigin(0.5);
 
+      // Chevron marker — hidden by default, shows when this button is hovered.
+      const chevron = this.add
+        .text(x - btnWidth / 2 + 6, y, '►', {
+          fontFamily: FONT,
+          fontSize: '16px',
+          color: '#8aff8a',
+        })
+        .setOrigin(0, 0.5)
+        .setVisible(false);
+      chevrons.push(chevron);
+
+      const updateHover = () => {
+        chevrons.forEach((c, j) => c.setVisible(j === i));
+        bgs.forEach((b, j) => b.el.setFillStyle(j === i ? HOVER_FILL : b.baseFill, 0.9));
+        descText.setText(ability.description ?? '');
+      };
+
       if (canAfford) {
-        bg.setInteractive({ useHandCursor: true }).once('pointerup', () => {
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerover', updateHover);
+        bg.once('pointerup', () => {
           this.sound.play('sfx-menu-confirm', { volume: 0.5 });
           this.chooseTarget(u, ability);
         });
+      } else {
+        // Still allow hover to show description even if the ability can't be used.
+        bg.setInteractive();
+        bg.on('pointerover', updateHover);
       }
 
-      this.actionMenuContainer!.add([bg, txt]);
+      this.actionMenuContainer!.add([bg, txt, chevron]);
     });
   }
 
@@ -1043,13 +1145,14 @@ export class CombatScene extends Phaser.Scene {
       return;
     }
 
-    const targets = this.validTargets(ability);
+    const targets = validTargets(this.units, ability);
     if (targets.length === 0) {
       this.waitMode = false;
       return;
     }
 
     this.targetSelectActive = true;
+    this.hideEnemyTooltip();
     this.setEnemyIdlesPaused(true);
     const prompt =
       ability.target === 'enemy'
@@ -1213,19 +1316,6 @@ export class CombatScene extends Phaser.Scene {
     this.cancelButton = undefined;
   }
 
-  private validTargets(ability: AbilityDef): Unit[] {
-    switch (ability.target) {
-      case 'enemy':
-        return this.units.filter((u) => u.side === 'enemy' && !u.ko);
-      case 'ally-or-escort':
-        return this.units.filter(
-          (u) => (u.side === 'party' || u.side === 'escort') && !u.ko,
-        );
-      default:
-        return [];
-    }
-  }
-
   private showItemMenu(attacker: Unit): void {
     const { width } = this.scale;
     const run = getRun();
@@ -1233,7 +1323,7 @@ export class CombatScene extends Phaser.Scene {
 
     this.itemMenuOpen = true;
     this.actionMenuContainer?.destroy();
-    this.actionMenuContainer = this.add.container(0, 0);
+    this.actionMenuContainer = this.add.container(0, 0).setDepth(150000);
 
     this.actionMenuContainer.add(
       this.add.text(30, PANEL_TOP + 38, 'ITEMS', {
@@ -1250,6 +1340,25 @@ export class CombatScene extends Phaser.Scene {
     const startX = 30;
     const startY = PANEL_TOP + 58;
 
+    // Description tooltip above the panel (matches action menu pattern).
+    const descText = this.add
+      .text(startX, PANEL_TOP - 12, '', {
+        fontFamily: FONT,
+        fontSize: '14px',
+        color: '#cfe8e8',
+        backgroundColor: '#0a1820cc',
+        padding: { x: 8, y: 4 },
+        wordWrap: { width: leftWidth - 60 },
+      })
+      .setOrigin(0, 1)
+      .setDepth(150000);
+    this.actionMenuContainer.add(descText);
+
+    const chevrons: Phaser.GameObjects.Text[] = [];
+    const bgs: { el: Phaser.GameObjects.Rectangle; baseFill: number }[] = [];
+    const BASE_FILL = 0x1a2a3a;
+    const HOVER_FILL = 0x2a4252;
+
     ITEM_ORDER.forEach((key, i) => {
       const item = ITEMS[key];
       const count = run.inventory[key] ?? 0;
@@ -1260,8 +1369,9 @@ export class CombatScene extends Phaser.Scene {
 
       const canUse = count > 0;
       const bg = this.add
-        .rectangle(x, y, btnWidth, btnHeight, 0x1a2a3a, 0.9)
+        .rectangle(x, y, btnWidth, btnHeight, BASE_FILL, 0.9)
         .setStrokeStyle(2, canUse ? 0x88ff88 : 0x444444);
+      bgs.push({ el: bg, baseFill: BASE_FILL });
       const txt = this.add
         .text(x, y, `${item.label} × ${count}`, {
           fontFamily: FONT,
@@ -1270,13 +1380,35 @@ export class CombatScene extends Phaser.Scene {
         })
         .setOrigin(0.5);
 
+      const chevron = this.add
+        .text(x - btnWidth / 2 + 6, y, '►', {
+          fontFamily: FONT,
+          fontSize: '16px',
+          color: '#8aff8a',
+        })
+        .setOrigin(0, 0.5)
+        .setVisible(false);
+      chevrons.push(chevron);
+
+      const updateHover = () => {
+        chevrons.forEach((c, j) => c.setVisible(j === i));
+        bgs.forEach((b, j) => b.el.setFillStyle(j === i ? HOVER_FILL : b.baseFill, 0.9));
+        descText.setText(item.description);
+      };
+
       if (canUse) {
-        bg.setInteractive({ useHandCursor: true }).once('pointerup', () => {
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerover', updateHover);
+        bg.once('pointerup', () => {
           this.sound.play('sfx-menu-confirm', { volume: 0.5 });
           this.chooseItemTarget(attacker, item);
         });
+      } else {
+        bg.setInteractive();
+        bg.on('pointerover', updateHover);
       }
-      this.actionMenuContainer!.add([bg, txt]);
+
+      this.actionMenuContainer!.add([bg, txt, chevron]);
     });
 
     const backY = startY + 2 * (btnHeight + btnGap) + btnHeight / 2;
@@ -1304,7 +1436,7 @@ export class CombatScene extends Phaser.Scene {
     this.actionMenuContainer?.destroy();
     this.actionMenuContainer = undefined;
 
-    const targets = this.validItemTargets(item);
+    const targets = validItemTargets(this.units, item);
 
     if (item.target === 'all-enemies') {
       this.executeItem(attacker, null, item);
@@ -1319,6 +1451,7 @@ export class CombatScene extends Phaser.Scene {
     }
 
     this.itemTargetSelectActive = true;
+    this.hideEnemyTooltip();
     this.showMessage(`${attacker.name} → select ${item.label} target`);
     this.showCancelButton(() => this.handleEscapeKey());
 
@@ -1339,21 +1472,6 @@ export class CombatScene extends Phaser.Scene {
         this.clearTargetSelect();
         this.executeItem(attacker, t, item);
       });
-    }
-  }
-
-  private validItemTargets(item: ItemDef): Unit[] {
-    switch (item.target) {
-      case 'ally-or-escort':
-        return this.units.filter(
-          (u) => (u.side === 'party' || u.side === 'escort') && !u.ko,
-        );
-      case 'ko-ally':
-        return this.units.filter((u) => u.side === 'party' && u.ko);
-      case 'caster':
-        return this.units.filter((u) => u.side === 'party' && !u.ko && u.maxMp > 0);
-      case 'all-enemies':
-        return [];
     }
   }
 
@@ -1415,6 +1533,7 @@ export class CombatScene extends Phaser.Scene {
 
   private clearTargetSelect(): void {
     this.setEnemyIdlesPaused(false);
+    this.hideEnemyTooltip();
     for (const u of this.units) {
       if (u.sprite) {
         u.sprite.clearTint();
@@ -1427,6 +1546,10 @@ export class CombatScene extends Phaser.Scene {
           this.restoreAlphaOnClear.delete(u.id);
         }
       }
+    }
+    // Re-attach persistent enemy hover tooltip handlers (wiped by removeAllListeners).
+    for (const u of this.units) {
+      if (u.side === 'enemy' && !u.ko) this.attachEnemyTooltipHandlers(u);
     }
   }
 
@@ -1448,7 +1571,7 @@ export class CombatScene extends Phaser.Scene {
 
     switch (ability.effect) {
       case 'damage': {
-        const baseDamage = this.calculateDamage(attacker, target, ability.power ?? 1, ability.element);
+        const baseDamage = calculateDamage(attacker, target, ability.power ?? 1, ability.element);
         const crit = Math.random() < 0.15;
         const damage = crit ? Math.round(baseDamage * 2) : baseDamage;
         const animKey = `${attacker.id}-attack-west`;
@@ -1499,10 +1622,10 @@ export class CombatScene extends Phaser.Scene {
         break;
       }
       case 'salvage': {
-        const baseDamage = this.calculateDamage(attacker, target, ability.power ?? 1);
+        const baseDamage = calculateDamage(attacker, target, ability.power ?? 1);
         const crit = Math.random() < 0.2;
         const finalDamage = crit ? baseDamage * 2 : baseDamage;
-        const animKey = `${attacker.id}-attack-${this.getUnitFacing(attacker)}`;
+        const animKey = `${attacker.id}-attack-${getUnitFacing(attacker)}`;
         const hasAnim = this.anims.exists(animKey);
 
         // 25% chance to salvage a random item. Better items weighted lower.
@@ -1567,7 +1690,7 @@ export class CombatScene extends Phaser.Scene {
       case 'pulse': {
         this.sound.play(ability.sfxKey ?? 'sfx-spell-cast', { volume: ability.sfxKey ? 1 : 0.5 });
         this.playCastTween(attacker);
-        const base = this.calculateDamage(attacker, target, ability.power ?? 1);
+        const base = calculateDamage(attacker, target, ability.power ?? 1);
         let finalDamage: number;
         if (target.enemyDef?.type === 'robotic') {
           finalDamage = Math.round(base * 1.5);
@@ -1587,7 +1710,7 @@ export class CombatScene extends Phaser.Scene {
         const hasSlowAnim = this.anims.exists(slowAnimKey) && attacker.side === 'party';
         const applySlowImpact = () => {
           this.sound.play(ability.sfxKey ?? 'sfx-spell-cast', { volume: ability.sfxKey ? 1 : 0.5 });
-          const damage = this.calculateDamage(attacker, target, ability.power ?? 0.6, ability.element);
+          const damage = calculateDamage(attacker, target, ability.power ?? 0.6, ability.element);
           this.applyDamage(target, damage, false, ability.element);
           target.atbModifier = 0.5;
           target.atbModifierTurnsLeft = 2;
@@ -1646,19 +1769,18 @@ export class CombatScene extends Phaser.Scene {
         break;
       }
       case 'flurry': {
-        // Stagger the 3 hits so damage numbers land sequentially (not in a single
-        // frame) and the enemy's death fade doesn't cut off the animation.
-        this.sound.play(ability.sfxKey ?? 'sfx-attack-melee', { volume: 1 });
-        this.playAttackTween(attacker, target);
+        // Run the staggered hits inside the attack sequence's onImpact callback
+        // so damage numbers land AFTER the walk-forward + mid-anim, not before.
+        const animKey = `${attacker.id}-attack-west`;
+        const hasAnim = this.anims.exists(animKey) && attacker.side === 'party';
         const hits = 3;
         const perHitPower = ability.power ?? 0.5;
-        const interHitDelay = 250;
-        const startDelay = 150;
+        const interHitDelay = 200;
         let totalDamage = 0;
         let hitsLanded = 0;
         const fireHit = (i: number) => {
           if (target.ko) return;
-          const dmg = this.calculateDamage(attacker, target, perHitPower);
+          const dmg = calculateDamage(attacker, target, perHitPower);
           this.applyDamage(target, dmg);
           totalDamage += dmg;
           hitsLanded++;
@@ -1668,13 +1790,43 @@ export class CombatScene extends Phaser.Scene {
             this.showMessage(`${attacker.name} FLURRY — ${hitsLanded} hits for ${totalDamage}`);
           }
         };
-        this.time.delayedCall(startDelay, () => fireHit(0));
 
-        // Finalize after the full hit sequence instead of the default 400ms.
+        const applyImpact = () => {
+          const flurrySfx = this.sound.add(ability.sfxKey ?? 'sfx-attack-melee');
+          flurrySfx.play({ volume: 1 });
+          this.time.delayedCall(700, () => flurrySfx.stop());
+          fireHit(0);
+        };
+
+        if (hasAnim) {
+          attacker.atb = 0;
+          this.activeUnitId = null;
+          for (const uu of this.units) this.updatePanelRow(uu);
+          // Delay the onComplete slightly so all 3 hits land before walk-back starts.
+          const hitSequenceDuration = (hits - 1) * interHitDelay + 200;
+          this.playFullAttackSequence(
+            attacker,
+            target,
+            animKey,
+            applyImpact,
+            () => {
+              this.time.delayedCall(hitSequenceDuration, () => {
+                this.waitMode = false;
+                this.checkEndConditions();
+              });
+            },
+            hits - 1, // replay attack anim 3× total to cover all 3 hits before walk-back
+          );
+          return;
+        }
+
+        // Fallback (no attack anim): fire impact immediately, finalize after full sequence.
+        this.playAttackTween(attacker, target);
+        applyImpact();
         attacker.atb = 0;
         this.activeUnitId = null;
         for (const uu of this.units) this.updatePanelRow(uu);
-        const totalDuration = startDelay + hits * interHitDelay + 300;
+        const totalDuration = hits * interHitDelay + 300;
         this.time.delayedCall(totalDuration, () => {
           this.waitMode = false;
           this.checkEndConditions();
@@ -1734,8 +1886,8 @@ export class CombatScene extends Phaser.Scene {
       // KO'd party: slightly faded (so they're visibly still there for revive targeting).
       // KO'd enemy: fade to 0 entirely — dead enemies are removed from the scene.
       // (When we add revivable enemies later, give them a partial alpha like party.)
-      const koAlpha = target.side === 'enemy' ? 0 : 0.7;
-      const facing = this.getUnitFacing(target);
+      const koAlpha = target.side === 'enemy' ? 0 : 0.5;
+      const facing = getUnitFacing(target);
       const deathAnimKey = `${target.id}-death-${facing}`;
       const downedKey = `${target.id}-downed`;
       if (target.sprite && this.anims.exists(deathAnimKey)) {
@@ -1777,7 +1929,11 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private beginEnemyTurn(enemy: Unit): void {
-    log('TURN', 'enemy turn begin', { unit: enemy.id, behavior: enemy.enemyDef?.behavior, hp: enemy.hp });
+    log('TURN', 'enemy turn begin', {
+      unit: enemy.id,
+      behavior: enemy.enemyDef?.behavior,
+      hp: enemy.hp,
+    });
     this.waitMode = true;
 
     // Hide every other enemy's HP bar before this one starts attacking — a bar
@@ -1791,9 +1947,7 @@ export class CombatScene extends Phaser.Scene {
       other.enemyHpBar.setAlpha(0);
       other.enemyHpBarBg?.setAlpha(0);
     }
-    const living = this.units.filter(
-      (u) => (u.side === 'party' || u.side === 'escort') && !u.ko,
-    );
+    const living = this.units.filter((u) => (u.side === 'party' || u.side === 'escort') && !u.ko);
     if (living.length === 0) {
       this.waitMode = false;
       return;
@@ -1832,7 +1986,7 @@ export class CombatScene extends Phaser.Scene {
             (u) => (u.side === 'party' || u.side === 'escort') && !u.ko,
           );
           for (const t of targets) {
-            const damage = Math.max(1, this.calculateDamage(enemy, t, 0.7));
+            const damage = Math.max(1, calculateDamage(enemy, t, 0.7));
             this.applyDamage(t, damage);
           }
         },
@@ -1868,9 +2022,23 @@ export class CombatScene extends Phaser.Scene {
     const guardian = this.units.find((u) => u.side === 'party' && u.guarding && !u.ko);
     const redirected = !ignoreGuard && guardian && target !== guardian;
 
-    this.showMessage(`${enemy.name} attacks ${target.name}!`);
+    // Resolve the GUARD redirect UP FRONT so the walk destination and the
+    // path-dim logic use the actual final target. Previously the redirect
+    // happened at impact, so Wirehead would walk toward the escort (dimming
+    // party on the way) even when GUARD was about to intercept.
+    let guardHalved = false;
+    if (redirected && guardian) {
+      target = guardian;
+      guardHalved = true;
+      this.showMessage(`${guardian.name} intercepts ${enemy.name}'s attack!`);
+    } else if (!ignoreGuard && target.guarding) {
+      guardHalved = true;
+      this.showMessage(`${enemy.name} attacks ${target.name}!`);
+    } else {
+      this.showMessage(`${enemy.name} attacks ${target.name}!`);
+    }
 
-    const facing = this.getUnitFacing(enemy);
+    const facing = getUnitFacing(enemy);
     const attackAnimKey = `${enemy.id}-attack-${facing}`;
     const hasAnim = this.anims.exists(attackAnimKey);
 
@@ -1882,17 +2050,10 @@ export class CombatScene extends Phaser.Scene {
         this.showMessage(`${enemy.name} is blinded by smoke!`);
         return;
       }
-      // Enemy-specific attack SFX (or fallback to the punchy shared enemy melee)
       const enemyAttackSfx = enemy.enemyDef?.attackSfxKey ?? 'sfx-enemy-attack';
       this.sound.play(enemyAttackSfx, { volume: 1 });
-      let damage = this.calculateDamage(enemy, target, 1);
-      if (redirected && guardian) {
-        this.showMessage(`${guardian.name} intercepts!`);
-        target = guardian;
-        damage = Math.max(1, Math.floor(damage / 2));
-      } else if (!ignoreGuard && target.guarding) {
-        damage = Math.max(1, Math.floor(damage / 2));
-      }
+      let damage = calculateDamage(enemy, target, 1);
+      if (guardHalved) damage = Math.max(1, Math.floor(damage / 2));
       this.applyDamage(target, damage);
     };
 
@@ -1932,26 +2093,15 @@ export class CombatScene extends Phaser.Scene {
     }
   }
 
-  private calculateDamage(
-    attacker: Unit,
-    target: Unit,
-    power: number,
-    element?: Element,
-  ): number {
-    const base = Math.max(1, attacker.attack * power - target.defense);
-    const variance = Math.floor(Math.random() * 5) - 2;
-    let damage = Math.max(1, Math.round(base + variance));
-    if (element && target.enemyDef?.vulnerability === element) {
-      damage = Math.round(damage * 1.5);
-    }
-    return damage;
-  }
-
   private spawnDamageNumber(u: Unit, damage: number, crit = false, element?: Element): void {
     const glyph = element ? VULNERABILITY_GLYPH[element] : '';
     const suffix = glyph ? ` ${glyph}` : '';
     if (crit) {
-      this.spawnFloatNumber(u, `${damage}!${suffix}`, '#ff5533', { fontSize: '48px', stroke: '#4a0000', strokeThickness: 6 });
+      this.spawnFloatNumber(u, `${damage}!${suffix}`, '#ff5533', {
+        fontSize: '48px',
+        stroke: '#4a0000',
+        strokeThickness: 6,
+      });
     } else {
       this.spawnFloatNumber(u, `${damage}${suffix}`, '#ffdd55');
     }
@@ -1993,7 +2143,7 @@ export class CombatScene extends Phaser.Scene {
   private playAttackTween(u: Unit, target: Unit): void {
     if (!u.sprite) return;
 
-    const facing = this.getUnitFacing(u);
+    const facing = getUnitFacing(u);
     const animKey = `${u.id}-attack-${facing}`;
     const hasAnim = this.anims.exists(animKey);
 
@@ -2111,6 +2261,7 @@ export class CombatScene extends Phaser.Scene {
     animKey: string,
     onImpact?: () => void,
     onComplete?: () => void,
+    attackRepeats: number = 0,
   ): void {
     if (!u.sprite) return;
     const sprite = u.sprite;
@@ -2121,7 +2272,7 @@ export class CombatScene extends Phaser.Scene {
     // Position attacker just in front of the target on their own side
     const facingDir = target.posX < u.posX ? -1 : 1;
     let forwardX = target.posX - facingDir * (attackerHalfW + targetHalfW + gap);
-    let forwardY = target.posY;
+    const forwardY = target.posY;
 
     // (Enemies attacking the escort walk directly to her — no clamp. Party
     // members in the visual path are dimmed during the walk, see below.)
@@ -2130,28 +2281,22 @@ export class CombatScene extends Phaser.Scene {
     // edge (largest-X enemy) rather than walking through front-line enemies to
     // reach a back-line target.
     if (u.side === 'party' && target.side === 'enemy') {
-      const livingEnemies = this.units.filter(
-        (e) => e.side === 'enemy' && !e.ko,
-      );
+      const livingEnemies = this.units.filter((e) => e.side === 'enemy' && !e.ko);
       if (livingEnemies.length > 0) {
-        const frontLine = livingEnemies.reduce((acc, e) =>
-          e.posX > acc.posX ? e : acc,
-        );
+        const frontLine = livingEnemies.reduce((acc, e) => (e.posX > acc.posX ? e : acc));
         if (frontLine !== target) {
           const frontHalfW = (frontLine.sprite?.displayWidth ?? 120) * 0.5;
-          forwardX =
-            frontLine.posX - facingDir * (attackerHalfW + frontHalfW * 0.3 + 4);
+          forwardX = frontLine.posX - facingDir * (attackerHalfW + frontHalfW * 0.3 + 4);
         }
       }
     }
-
 
     // Distance-based walk duration so long walks take longer than short ones
     const distance = Phaser.Math.Distance.Between(u.posX, u.posY, forwardX, forwardY);
     const walkSpeed = 0.55; // pixels per ms
     const walkDuration = Math.max(350, distance / walkSpeed);
 
-    const walkAnimKey = `${u.id}-walk-${this.getUnitFacing(u)}`;
+    const walkAnimKey = `${u.id}-walk-${getUnitFacing(u)}`;
     const hasWalk = this.anims.exists(walkAnimKey);
 
     // Stop any idle bob so it doesn't fight the walk-forward/walk-back y tween.
@@ -2194,8 +2339,7 @@ export class CombatScene extends Phaser.Scene {
 
     // During walk-back, enemies use a raised tier so the attacker renders above other enemies
     // (party continue to use their normal tier so walking-back party respects party-peer stacking).
-    const walkBackBase =
-      u.side === 'enemy' ? DEPTH_ENEMY_ACTIVE_BASE : DEPTH_PARTY_BASE;
+    const walkBackBase = u.side === 'enemy' ? DEPTH_ENEMY_ACTIVE_BASE : DEPTH_PARTY_BASE;
     const sideBase = u.side === 'enemy' ? DEPTH_ENEMY_BASE : DEPTH_PARTY_BASE;
     void sideBase; // kept to document the idle-tier baseline for reference
 
@@ -2229,7 +2373,7 @@ export class CombatScene extends Phaser.Scene {
         if (hasWalk) sprite.anims.stop();
         sprite.setTexture(u.spriteKey);
         // Step 2: play attack animation, fire impact mid-anim
-        sprite.play(animKey);
+        sprite.play({ key: animKey, repeat: attackRepeats });
         const impactDelay = 300;
         if (onImpact) this.time.delayedCall(impactDelay, onImpact);
         sprite.once('animationcomplete', () => {
@@ -2328,7 +2472,7 @@ export class CombatScene extends Phaser.Scene {
 
   private playIdleFor(u: Unit): void {
     if (!u.sprite || u.ko) return;
-    const idleKey = `${u.id}-idle-${this.getUnitFacing(u)}`;
+    const idleKey = `${u.id}-idle-${getUnitFacing(u)}`;
     if (this.anims.exists(idleKey)) {
       u.sprite.play(idleKey);
     }

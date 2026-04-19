@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
 import { CLASSES, CLASS_ORDER } from '../data/classes';
+import { FONT } from '../util/ui';
+import { stopAllMusic } from '../util/audio';
 
-const FONT = 'Silkscreen, monospace';
 const REQUIRED_PARTY_SIZE = 3;
 
 export class LobbyScene extends Phaser.Scene {
@@ -23,10 +24,7 @@ export class LobbyScene extends Phaser.Scene {
     const MAIN_THEME = 'music-main-theme';
     const currentKey = this.registry.get('currentRouteMusic') as string | undefined;
     if (currentKey !== MAIN_THEME) {
-      // Stop any music currently playing (catches stale route/boss music too).
-      for (const s of this.sound.getAllPlaying()) {
-        if (s.key?.startsWith('music-')) s.stop();
-      }
+      stopAllMusic(this);
       this.sound.play(MAIN_THEME, { loop: true, volume: 0.25 });
       this.registry.set('currentRouteMusic', MAIN_THEME);
     }
