@@ -1,10 +1,14 @@
 import * as Phaser from 'phaser';
 import { CLASSES, type AbilityDef, type ClassDef, type Element } from '../data/classes';
-import { ENEMIES, VULNERABILITY_GLYPH } from '../data/enemies';
+import { ENEMIES, type EnemyDef } from '../data/enemies';
 import { ITEMS, ITEM_ORDER, type ItemDef } from '../data/items';
 import { getRun, hasRun, ESCORT_MAX_HP } from '../state/run';
 import type { BackgroundVariant } from '../data/routes';
 import { log, copyLogToClipboard } from '../util/logger';
+import { playMusicPool } from '../util/music';
+import { playSfx } from '../util/audio';
+import { buildAudioSettingsPanel } from '../util/audioSettingsPanel';
+import { drawFromBag } from '../util/bag';
 import { FONT } from '../util/ui';
 import {
   ATB_MAX,
@@ -24,6 +28,7 @@ import {
   type Unit,
 } from '../combat/types';
 import { calculateDamage, getUnitFacing, validTargets, validItemTargets } from '../combat/helpers';
+import { flashSprite, playHitShake, spawnDamageNumber, spawnFloatNumber } from '../combat/fx';
 
 export class CombatScene extends Phaser.Scene {
   private units: Unit[] = [];
@@ -45,9 +50,8 @@ export class CombatScene extends Phaser.Scene {
   private itemMenuOpen = false;
   private cancelButton?: Phaser.GameObjects.Text;
   private restoreAlphaOnClear = new Map<string, number>();
-  // Per-combat ability use tracking: key = `${unitId}:${abilityId}` → uses remaining.
-  private abilityUsesRemaining = new Map<string, number>();
   private activeBgVariant: BackgroundVariant = { key: '' };
+  private smokeClouds: Phaser.GameObjects.Sprite[] = [];
 
   constructor() {
     super('Combat');
@@ -61,7 +65,7 @@ export class CombatScene extends Phaser.Scene {
     this.activeUnitId = null;
 
     if (!hasRun()) {
-      this.scene.start('Lobby');
+      this.scene.start('LeaderSelect');
       return;
     }
 
@@ -69,10 +73,18 @@ export class CombatScene extends Phaser.Scene {
     const run = getRun();
     this.cameras.main.setBackgroundColor('#1a2619');
 
-    const variants = run.route.backgroundVariants ?? [run.route.backgroundKey];
-    const picked = variants[Math.floor(Math.random() * variants.length)];
-    const bgVariant =
-      typeof picked === 'string' ? { key: picked } : (picked ?? { key: run.route.backgroundKey });
+    // Per-encounter background override (bosses) takes priority. Otherwise
+    // grab-bag pick across route variants.
+    const encounterForBg = run.route.encounters[run.encounterIndex];
+    let bgVariant: BackgroundVariant;
+    if (encounterForBg?.backgroundKey) {
+      bgVariant = { key: encounterForBg.backgroundKey };
+    } else {
+      const variants = run.route.backgroundVariants ?? [run.route.backgroundKey];
+      const picked = drawFromBag(`bg:${run.route.id}`, variants);
+      bgVariant =
+        typeof picked === 'string' ? { key: picked } : (picked ?? { key: run.route.backgroundKey });
+    }
     this.activeBgVariant = bgVariant;
     if (this.textures.exists(bgVariant.key)) {
       this.add
@@ -91,36 +103,17 @@ export class CombatScene extends Phaser.Scene {
     const musicKeys = bossMusicKey ? [bossMusicKey] : run.route.musicKeys;
 
     if (musicKeys && musicKeys.length > 0) {
-      const currentKey = this.registry.get('currentRouteMusic') as string | undefined;
-      const alreadyPlaying =
-        currentKey && musicKeys.includes(currentKey) && this.sound.get(currentKey)?.isPlaying;
-      if (!alreadyPlaying) {
-        // Stop ANY music-* sound currently playing (covers title theme from Lobby
-        // as well as any stale route music not tracked in the registry).
-        for (const s of this.sound.getAllPlaying()) {
-          if (s.key?.startsWith('music-')) s.stop();
-        }
-        const pick = musicKeys[Math.floor(Math.random() * musicKeys.length)];
-        const musicVolume = bossMusicKey ? 0.2 : 0.13;
-        this.sound.play(pick, { loop: true, volume: musicVolume });
-        this.registry.set('currentRouteMusic', pick);
-      }
+      // playMusicPool handles the "already playing from the same pool?" check
+      // internally and re-picks a variant each time a track loops.
+      const musicVolume = bossMusicKey ? 0.5 : 0.35;
+      playMusicPool(this, musicKeys, musicVolume);
     }
 
     // Register animations before sprite creation so idle anims can play immediately.
     this.registerAnimations();
 
     this.buildUnits();
-    // Initialize per-combat ability use counters from each unit's class abilities.
-    this.abilityUsesRemaining.clear();
-    for (const u of this.units) {
-      if (!u.classDef) continue;
-      for (const ab of u.classDef.abilities) {
-        if (ab.maxUsesPerCombat !== undefined) {
-          this.abilityUsesRemaining.set(`${u.id}:${ab.id}`, ab.maxUsesPerCombat);
-        }
-      }
-    }
+    // Ability uses live on the run state (persist across combats; refill at Rest).
     for (const u of this.units) this.createBattleSprite(u);
 
     this.drawBottomPanel();
@@ -129,7 +122,7 @@ export class CombatScene extends Phaser.Scene {
       .text(
         width / 2,
         30,
-        `${run.route.name}  —  Encounter ${run.encounterIndex + 1} / ${run.route.encounters.length}`,
+        `${run.route.name}  —  Encounter ${run.encounterIndex + 1}`,
         {
           fontFamily: FONT,
           fontSize: '20px',
@@ -173,7 +166,9 @@ export class CombatScene extends Phaser.Scene {
     }
 
     this.input.keyboard?.on('keydown-ESC', () => this.handleEscapeKey());
-    this.input.keyboard?.on('keydown-D', () => this.toggleDevOverlay());
+    // Dev overlay toggle — F2 (standard debug key, avoids conflicts with
+    // the D menu-nav key and browser extensions that grab backtick).
+    this.input.keyboard?.on('keydown-F2', () => this.toggleDevOverlay());
     this.input.keyboard?.on('keydown-L', async () => {
       const ok = await copyLogToClipboard();
       this.showMessage(ok ? 'Log copied to clipboard' : 'Copy failed — check console');
@@ -209,7 +204,13 @@ export class CombatScene extends Phaser.Scene {
       }
       const walkKey = `${key}-walk-west`;
       if (!this.anims.exists(walkKey)) {
-        const walkCount = key === 'cybermonk' || key === 'scavenger' ? 6 : 4;
+        const walkCount =
+          key === 'cybermonk' ||
+          key === 'scavenger' ||
+          key === 'vanguard' ||
+          key === 'medic'
+            ? 6
+            : 4;
         const frames = Array.from({ length: walkCount }, (_, i) => ({
           key: `${key}-walk-west-${i.toString().padStart(3, '0')}`,
         }));
@@ -217,7 +218,14 @@ export class CombatScene extends Phaser.Scene {
       }
       const deathKey = `${key}-death-west`;
       if (!this.anims.exists(deathKey)) {
-        const deathCount = key === 'scavenger' || key === 'cybermonk' ? 4 : 7;
+        const deathCount =
+          key === 'scavenger' || key === 'cybermonk'
+            ? 4
+            : key === 'vanguard'
+              ? 11
+              : key === 'medic'
+                ? 9
+                : 7;
         const frames = Array.from({ length: deathCount }, (_, i) => ({
           key: `${key}-death-west-${i.toString().padStart(3, '0')}`,
         }));
@@ -225,12 +233,12 @@ export class CombatScene extends Phaser.Scene {
       }
     }
 
-    // Medic cast animation (non-damage ability animations)
+    // Medic cast animation (9-frame healing magic) — PATCH / PULSE / STIM / SHIELD
     if (!this.anims.exists('medic-cast-west')) {
-      const frames = Array.from({ length: 4 }, (_, i) => ({
+      const frames = Array.from({ length: 9 }, (_, i) => ({
         key: `medic-cast-west-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'medic-cast-west', frames, frameRate: 8, repeat: 0 });
+      this.anims.create({ key: 'medic-cast-west', frames, frameRate: 9, repeat: 0 });
     }
 
     // Dr. Vey escort death animation (she faces west like party)
@@ -241,9 +249,9 @@ export class CombatScene extends Phaser.Scene {
       this.anims.create({ key: 'drvey-death-west', frames, frameRate: 10, repeat: 0 });
     }
 
-    // Wirehead (enemy) — walk + attack + death (east direction)
+    // Wirehead (new 92×92 PixelLab sprite) — walk, attack, death, idle
     if (!this.anims.exists('wirehead-walk-east')) {
-      const frames = Array.from({ length: 4 }, (_, i) => ({
+      const frames = Array.from({ length: 6 }, (_, i) => ({
         key: `wirehead-walk-east-${i.toString().padStart(3, '0')}`,
       }));
       this.anims.create({ key: 'wirehead-walk-east', frames, frameRate: 8, repeat: -1 });
@@ -280,6 +288,24 @@ export class CombatScene extends Phaser.Scene {
       }));
       this.anims.create({ key: 'wreckling-attack-east', frames, frameRate: 7, repeat: 0 });
     }
+    if (!this.anims.exists('wreckling-attack-coolant-east')) {
+      const frames = Array.from({ length: 9 }, (_, i) => ({
+        key: `wreckling-attack-coolant-east-${i.toString().padStart(3, '0')}`,
+      }));
+      this.anims.create({ key: 'wreckling-attack-coolant-east', frames, frameRate: 8, repeat: 0 });
+    }
+    if (!this.anims.exists('wreckling-attack-shockwave-east')) {
+      const frames = Array.from({ length: 17 }, (_, i) => ({
+        key: `wreckling-attack-shockwave-east-${i.toString().padStart(3, '0')}`,
+      }));
+      // 17 frames at 12fps ≈ 1.4s total — gives the fist-raise + slam its full beat
+      this.anims.create({
+        key: 'wreckling-attack-shockwave-east',
+        frames,
+        frameRate: 12,
+        repeat: 0,
+      });
+    }
     if (!this.anims.exists('wreckling-death-east')) {
       const frames = Array.from({ length: 4 }, (_, i) => ({
         key: `wreckling-death-east-${i.toString().padStart(3, '0')}`,
@@ -305,6 +331,13 @@ export class CombatScene extends Phaser.Scene {
         key: `sentry-attack-east-${i.toString().padStart(3, '0')}`,
       }));
       this.anims.create({ key: 'sentry-attack-east', frames, frameRate: 9, repeat: 0 });
+    }
+    if (!this.anims.exists('sentry-attack-thermal-east')) {
+      const frames = Array.from({ length: 8 }, (_, i) => ({
+        key: `sentry-attack-thermal-east-${i.toString().padStart(3, '0')}`,
+      }));
+      // 8 frames at 7fps ≈ 1.14s — bolt launches on frame 6 (~714ms in).
+      this.anims.create({ key: 'sentry-attack-thermal-east', frames, frameRate: 7, repeat: 0 });
     }
     if (!this.anims.exists('sentry-death-east')) {
       const frames = Array.from({ length: 8 }, (_, i) => ({
@@ -360,6 +393,14 @@ export class CombatScene extends Phaser.Scene {
       }));
       this.anims.create({ key: 'scoutdrone-idle-east', frames, frameRate: 5, repeat: -1 });
     }
+
+    // Smoke grenade VFX — looping billow (SpriteCook-animated, flipped)
+    if (!this.anims.exists('smoke-vfx')) {
+      const frames = Array.from({ length: 8 }, (_, i) => ({
+        key: `smoke-vfx-${i.toString().padStart(3, '0')}`,
+      }));
+      this.anims.create({ key: 'smoke-vfx', frames, frameRate: 6, repeat: -1 });
+    }
   }
 
   private buildDevOverlay(): void {
@@ -401,7 +442,11 @@ export class CombatScene extends Phaser.Scene {
     if (this.enemyTooltipFor?.sprite) {
       const u = this.enemyTooltipFor;
       const sprite = u.sprite!;
-      const atHome = Math.abs(sprite.x - u.posX) < 2 && Math.abs(sprite.y - u.posY) < 2;
+      // X-only check — floaty enemies (scoutdrone, naniteswarm) have an idle
+      // bob tween that moves sprite.y every frame, which would otherwise make
+      // this flicker-hide the tooltip. Attack sequences always move X too, so
+      // X-only still correctly detects "mid-animation, don't anchor here."
+      const atHome = Math.abs(sprite.x - u.posX) < 2;
       if (!atHome || u.ko) this.hideEnemyTooltip();
     }
 
@@ -409,7 +454,6 @@ export class CombatScene extends Phaser.Scene {
     const dt = delta / 1000;
     for (const u of this.units) {
       if (u.ko || u.side === 'escort') continue;
-      if (u.sleeping) continue;
       u.atb = Math.min(ATB_MAX, u.atb + u.speed * ATB_RATE * u.atbModifier * dt);
       this.updatePanelRow(u);
       if (u.atb >= ATB_MAX) {
@@ -432,6 +476,7 @@ export class CombatScene extends Phaser.Scene {
       arenaHeight * 0.62 +
       40 +
       (run.route.partyYOffset ?? 0) +
+      (currentEncounter?.partyYOffset ?? 0) +
       (this.activeBgVariant.partyYOffset ?? 0);
     const enemyCentreY =
       arenaHeight * 0.62 +
@@ -605,7 +650,7 @@ export class CombatScene extends Phaser.Scene {
       side,
       classDef: def,
       spriteKey: def.spriteKey,
-      scale: 2.5,
+      scale: def.scale ?? 2.5,
       hp: def.hp,
       maxHp: def.hp,
       mp: def.mp,
@@ -624,7 +669,6 @@ export class CombatScene extends Phaser.Scene {
       | 'atb'
       | 'ko'
       | 'guarding'
-      | 'sleeping'
       | 'tauntedBy'
       | 'atbModifier'
       | 'atbModifierTurnsLeft'
@@ -637,7 +681,6 @@ export class CombatScene extends Phaser.Scene {
       atb: 0,
       ko: false,
       guarding: false,
-      sleeping: false,
       tauntedBy: null,
       atbModifier: 1,
       atbModifierTurnsLeft: 0,
@@ -658,29 +701,56 @@ export class CombatScene extends Phaser.Scene {
     // Per-sprite character bbox within its native canvas (from PIL analysis).
     // Used to (a) center the visible character at (posX, posY) via setOrigin and
     // (b) position shadow/HP bar relative to the character, not the canvas.
-    const BBOX: Record<number, { centerX: number; centerY: number; feetY: number; headY: number }> =
-      {
-        64: { centerX: 32, centerY: 32, feetY: 56, headY: 6 },
-        68: { centerX: 34, centerY: 33, feetY: 57, headY: 9 },
-        80: { centerX: 40, centerY: 40, feetY: 74, headY: 6 },
-        82: { centerX: 41, centerY: 57, feetY: 82, headY: 32 },
-        84: { centerX: 42, centerY: 48, feetY: 84, headY: 12 },
-        92: { centerX: 46, centerY: 46, feetY: 88, headY: 4 },
-        136: { centerX: 62.5, centerY: 77.5, feetY: 133, headY: 22 },
-      };
-    const bbox = BBOX[nativeCanvasSize] ?? BBOX[68];
+    // feetX is optional — use when the character's feet are offset from the
+    // opaque bbox center (e.g. Wreckling's backpack pulls the bbox leftward).
+    // Defaults to centerX if unset.
+    const BBOX: Record<
+      number,
+      { centerX: number; centerY: number; feetY: number; headY: number; feetX?: number }
+    > = {
+      64: { centerX: 32, centerY: 32, feetY: 56, headY: 6 },
+      68: { centerX: 34, centerY: 33, feetY: 57, headY: 9 },
+      80: { centerX: 40, centerY: 40, feetY: 74, headY: 6 },
+      82: { centerX: 41, centerY: 57, feetY: 82, headY: 32 },
+      84: { centerX: 42, centerY: 48, feetY: 84, headY: 12 },
+      92: { centerX: 46, centerY: 46, feetY: 88, headY: 4 },
+      // Calibrated to the new 96×96 Vanguard west.png (riot-shield defender).
+      96: { centerX: 46.5, centerY: 47.5, feetY: 71, headY: 24 },
+      // Calibrated to the new 104×104 Medic west.png.
+      104: { centerX: 53.5, centerY: 50.5, feetY: 76, headY: 25 },
+      // Calibrated to wreckling idle-east frames (plays 95% of combat), not
+      // the static east.png — idle frames sit ~5px higher and 1px right.
+      136: { centerX: 63.5, centerY: 72.5, feetY: 128, headY: 17, feetX: 67.5 },
+    };
+    // Per-sprite-key overrides — take priority over the canvas-size lookup
+    // when two sprites share a canvas size but have different character bboxes
+    // (e.g. wirehead + scoutdrone both 92×92 but very different silhouettes).
+    const SPRITE_BBOX: Record<string, (typeof BBOX)[number]> = {
+      'wirehead-east': { centerX: 44.5, centerY: 47, feetY: 81, headY: 13 },
+      'wirehead-west': { centerX: 48, centerY: 46.5, feetY: 81, headY: 12 },
+      'wirehead-south': { centerX: 46.5, centerY: 45.5, feetY: 80, headY: 11 },
+      'wirehead-north': { centerX: 46, centerY: 45, feetY: 81, headY: 9 },
+    };
+    const bbox =
+      SPRITE_BBOX[u.spriteKey] ?? BBOX[nativeCanvasSize] ?? BBOX[68];
     const originX = bbox.centerX / nativeCanvasSize;
     const originY = bbox.centerY / nativeCanvasSize;
     // Distance (display px) from the origin point to the feet / head top.
     const feetDistBelowOrigin = (bbox.feetY - bbox.centerY) * u.scale;
     const headDistAboveOrigin = (bbox.centerY - bbox.headY) * u.scale;
+    u.feetOffsetY = feetDistBelowOrigin;
     const shadowY = u.posY + feetDistBelowOrigin + 4 + (isFloaty ? 25 : 0);
+    // Horizontal offset of feet from sprite origin — zero when the character's
+    // feet sit at the bbox center, non-zero when asymmetric (e.g. Wreckling's
+    // offset backpack).
+    const feetOffsetX = ((bbox.feetX ?? bbox.centerX) - bbox.centerX) * u.scale;
+    const shadowX = u.posX + feetOffsetX;
     // Characters only occupy ~30-40% of the 68px canvas width — size the shadow
     // to the actual character bbox rather than the full sprite display width.
     const shadowWidth = spriteWidth * (isFloaty ? 0.28 : 0.32);
     const shadowHeight = shadowWidth * 0.32;
     u.shadow = this.add.ellipse(
-      u.posX,
+      shadowX,
       shadowY,
       shadowWidth,
       shadowHeight,
@@ -759,7 +829,8 @@ export class CombatScene extends Phaser.Scene {
     // Suppress while the enemy is mid-animation (walking to attack, attacking,
     // walking back, hit-shake). If the sprite is away from its home position,
     // it's in a sequence and the tooltip would anchor to a moving target.
-    const atHome = Math.abs(u.sprite.x - u.posX) < 2 && Math.abs(u.sprite.y - u.posY) < 2;
+    // X-only, same rationale as the update() path — floaty idle bob drifts Y.
+    const atHome = Math.abs(u.sprite.x - u.posX) < 2;
     if (!atHome) return;
 
     this.hideEnemyTooltip();
@@ -769,6 +840,19 @@ export class CombatScene extends Phaser.Scene {
     const header = def.name.toUpperCase();
     const hpLine = `HP ${u.hp} / ${u.maxHp}  (${hpPct}%)`;
     const desc = def.description ?? '';
+
+    const statusLines: string[] = [];
+    if (u.atbModifier < 1 && u.atbModifierTurnsLeft > 0) {
+      statusLines.push(`❄ SLOWED (${u.atbModifierTurnsLeft} turns)`);
+    }
+    if (u.atbModifier > 1 && u.atbModifierTurnsLeft > 0) {
+      statusLines.push(`▲ BOOSTED (${u.atbModifierTurnsLeft} turns)`);
+    }
+    if (u.shielded) statusLines.push('◆ SHIELDED (damage halved)');
+    if (u.tauntedBy) {
+      const taunter = this.units.find((t) => t.id === u.tauntedBy);
+      statusLines.push(`! TAUNTED — forced to attack ${taunter?.name ?? 'taunter'}`);
+    }
 
     const TOOLTIP_MAX_WIDTH = 300;
     const PADDING = 10;
@@ -785,6 +869,12 @@ export class CombatScene extends Phaser.Scene {
       fontSize: '12px',
       color: '#cfe8e8',
     });
+    const statusTxt = this.add.text(0, 0, statusLines.join('\n'), {
+      fontFamily: FONT,
+      fontSize: '12px',
+      color: '#ffd488',
+      wordWrap: { width: TOOLTIP_MAX_WIDTH - PADDING * 2 },
+    });
     const descTxt = this.add.text(0, 0, desc, {
       fontFamily: FONT,
       fontSize: '12px',
@@ -792,14 +882,21 @@ export class CombatScene extends Phaser.Scene {
       wordWrap: { width: TOOLTIP_MAX_WIDTH - PADDING * 2 },
     });
 
-    // Lay out vertically (header, hp, description).
+    // Lay out vertically (header, hp, statuses?, description).
     headerTxt.setPosition(PADDING, PADDING);
     hpTxt.setPosition(PADDING, PADDING + headerTxt.height + 2);
-    descTxt.setPosition(PADDING, PADDING + headerTxt.height + 2 + hpTxt.height + 4);
+    let cursorY = PADDING + headerTxt.height + 2 + hpTxt.height + 4;
+    if (statusLines.length > 0) {
+      statusTxt.setPosition(PADDING, cursorY);
+      cursorY += statusTxt.height + 4;
+    } else {
+      statusTxt.setVisible(false);
+    }
+    descTxt.setPosition(PADDING, cursorY);
 
     const contentWidth = Math.min(
       TOOLTIP_MAX_WIDTH,
-      Math.max(headerTxt.width, hpTxt.width, descTxt.width) + PADDING * 2,
+      Math.max(headerTxt.width, hpTxt.width, statusTxt.width, descTxt.width) + PADDING * 2,
     );
     const contentHeight = descTxt.y + descTxt.height + PADDING;
 
@@ -813,7 +910,13 @@ export class CombatScene extends Phaser.Scene {
     const spriteTop = sprite.y - sprite.displayHeight / 2;
     const tooltipX = sprite.x - contentWidth / 2;
     const tooltipY = spriteTop - contentHeight - 12;
-    const container = this.add.container(tooltipX, tooltipY, [bg, headerTxt, hpTxt, descTxt]);
+    const container = this.add.container(tooltipX, tooltipY, [
+      bg,
+      headerTxt,
+      hpTxt,
+      statusTxt,
+      descTxt,
+    ]);
     container.setDepth(150000);
 
     this.enemyTooltip = container;
@@ -854,7 +957,6 @@ export class CombatScene extends Phaser.Scene {
   private updateStatusIcon(u: Unit): void {
     if (!u.statusIcon) return;
     const parts: string[] = [];
-    if (u.sleeping) parts.push('z');
     if (u.atbModifier < 1 && u.atbModifierTurnsLeft > 0) parts.push('❄');
     if (u.atbModifier > 1 && u.atbModifierTurnsLeft > 0) parts.push('▲');
     if (u.shielded) parts.push('◆');
@@ -911,10 +1013,12 @@ export class CombatScene extends Phaser.Scene {
     const COL_NAME = 28;
     const COL_HP_TEXT_RIGHT = 260;
     const COL_HP_BAR = 270;
-    const HP_BAR_WIDTH = 60;
-    const COL_MP_TEXT_RIGHT = 420;
-    const COL_ATB_BAR = 440;
-    const ATB_BAR_WIDTH = 130;
+    const HP_BAR_WIDTH = 95;
+    // HP bar now ends at 365 (270+95). Shift MP text + ATB bar right so the
+    // "MP NN" text doesn't overlap the widened HP bar.
+    const COL_MP_TEXT_RIGHT = 440;
+    const COL_ATB_BAR = 460;
+    const ATB_BAR_WIDTH = 95;
 
     const rowUnits = [
       ...this.units.filter((u) => u.side === 'party'),
@@ -992,10 +1096,10 @@ export class CombatScene extends Phaser.Scene {
     if (!u.panelRow) return;
     const row = u.panelRow;
     row.hpText.setText(`${u.hp}/${u.maxHp}`);
-    row.hpBar.width = (u.hp / u.maxHp) * 60;
+    row.hpBar.width = (u.hp / u.maxHp) * 95;
 
     if (row.atbBar) {
-      row.atbBar.width = (u.atb / ATB_MAX) * 130;
+      row.atbBar.width = (u.atb / ATB_MAX) * 95;
     }
 
     if (row.mpText) row.mpText.setText(`MP ${u.mp}`);
@@ -1028,10 +1132,30 @@ export class CombatScene extends Phaser.Scene {
       u.atbModifierTurnsLeft--;
       if (u.atbModifierTurnsLeft === 0) u.atbModifier = 1;
     }
-    this.sound.play('sfx-atb-ready', { volume: 0.4 });
+    playSfx(this, 'sfx-atb-ready', 0.4);
     this.activeUnitId = u.id;
     for (const other of this.units) this.updatePanelRow(other);
     this.showMessage(`${u.name}'s turn`);
+    // Subtle ▼ marker above the active party member's head. Cleared when
+    // the action commits (at the top of executeAbility). Also defensively
+    // clear any lingering markers on OTHER party members — covers paths like
+    // item use where the previous turn's marker might not have been destroyed.
+    for (const other of this.units) {
+      if (other.activeTurnMarker) {
+        other.activeTurnMarker.destroy();
+        other.activeTurnMarker = undefined;
+      }
+    }
+    u.activeTurnMarker = this.add
+      .text(u.posX, u.posY - 75, '▼', {
+        fontFamily: FONT,
+        fontSize: '20px',
+        color: '#ffdd55',
+        stroke: '#000000',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(100000);
     this.showActionMenu(u);
   }
 
@@ -1061,13 +1185,18 @@ export class CombatScene extends Phaser.Scene {
         wordWrap: { width: leftWidth - 60 },
       })
       .setOrigin(0, 1)
-      .setDepth(150000);
+      .setDepth(150000)
+      .setVisible(false);
     this.actionMenuContainer.add(descText);
 
     const chevrons: Phaser.GameObjects.Text[] = [];
     const bgs: { el: Phaser.GameObjects.Rectangle; baseFill: number }[] = [];
     const BASE_FILL = 0x1a2a3a;
     const HOVER_FILL = 0x2a4252;
+    // Keyboard nav state: collected per-button so arrow/WASD/Enter can drive selection.
+    const selectFns: (() => void)[] = [];
+    const commitFns: (() => void)[] = [];
+    const canUseFlags: boolean[] = [];
 
     abilities.forEach((ability, i) => {
       const col = i % cols;
@@ -1075,9 +1204,10 @@ export class CombatScene extends Phaser.Scene {
       const x = startX + col * (btnWidth + 10) + btnWidth / 2;
       const y = startY + row * (btnHeight + btnGap) + btnHeight / 2;
 
+      const run = getRun();
       const usesRemaining =
-        ability.maxUsesPerCombat !== undefined
-          ? (this.abilityUsesRemaining.get(`${u.id}:${ability.id}`) ?? 0)
+        ability.maxUsesPerRest !== undefined
+          ? (run.abilityUsesRemaining[`${u.id}:${ability.id}`] ?? 0)
           : null;
       const hasUses = usesRemaining === null || usesRemaining > 0;
       const canAfford = u.mp >= ability.mpCost && hasUses;
@@ -1087,7 +1217,7 @@ export class CombatScene extends Phaser.Scene {
       bgs.push({ el: bg, baseFill: BASE_FILL });
       let label = ability.label;
       if (ability.mpCost > 0) label += `  (${ability.mpCost})`;
-      if (usesRemaining !== null) label += `  [${usesRemaining}/${ability.maxUsesPerCombat}]`;
+      if (usesRemaining !== null) label += `  [${usesRemaining}/${ability.maxUsesPerRest}]`;
       const txt = this.add
         .text(x, y, label, {
           fontFamily: FONT,
@@ -1111,23 +1241,96 @@ export class CombatScene extends Phaser.Scene {
       const updateHover = () => {
         chevrons.forEach((c, j) => c.setVisible(j === i));
         bgs.forEach((b, j) => b.el.setFillStyle(j === i ? HOVER_FILL : b.baseFill, 0.9));
-        descText.setText(ability.description ?? '');
+        const text = ability.description ?? '';
+        descText.setText(text);
+        descText.setVisible(text.length > 0);
+      };
+      const clearHover = () => {
+        chevrons.forEach((c) => c.setVisible(false));
+        bgs.forEach((b) => b.el.setFillStyle(b.baseFill, 0.9));
+        descText.setText('');
+        descText.setVisible(false);
+      };
+
+      const commit = () => {
+        playSfx(this, 'sfx-menu-confirm', 0.5);
+        this.chooseTarget(u, ability);
       };
 
       if (canAfford) {
         bg.setInteractive({ useHandCursor: true });
         bg.on('pointerover', updateHover);
-        bg.once('pointerup', () => {
-          this.sound.play('sfx-menu-confirm', { volume: 0.5 });
-          this.chooseTarget(u, ability);
-        });
+        bg.on('pointerout', clearHover);
+        bg.once('pointerup', commit);
       } else {
         // Still allow hover to show description even if the ability can't be used.
         bg.setInteractive();
         bg.on('pointerover', updateHover);
+        bg.on('pointerout', clearHover);
       }
 
+      selectFns.push(updateHover);
+      commitFns.push(commit);
+      canUseFlags.push(canAfford);
+
       this.actionMenuContainer!.add([bg, txt, chevron]);
+    });
+
+    // Keyboard navigation: arrows + WASD to move, Enter to confirm.
+    // 2-col grid; UP/DOWN moves by cols (clamped), LEFT/RIGHT moves ±1 wrap.
+    let selectedIdx = 0;
+    // Start on the first affordable button if the first slot is disabled.
+    const firstUsable = canUseFlags.findIndex((c) => c);
+    if (firstUsable >= 0) selectedIdx = firstUsable;
+    selectFns[selectedIdx]?.();
+
+    const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
+      const n = abilities.length;
+      if (n === 0) return;
+      let next = selectedIdx;
+      if (delta === 'left') next = (selectedIdx - 1 + n) % n;
+      else if (delta === 'right') next = (selectedIdx + 1) % n;
+      else if (delta === 'up') next = Math.max(0, selectedIdx - cols);
+      else if (delta === 'down') next = Math.min(n - 1, selectedIdx + cols);
+      if (next !== selectedIdx) {
+        selectedIdx = next;
+        selectFns[selectedIdx]?.();
+      }
+    };
+
+    const keyLeft = () => navigate('left');
+    const keyRight = () => navigate('right');
+    const keyUp = () => navigate('up');
+    const keyDown = () => navigate('down');
+    const keyConfirm = () => {
+      if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
+    };
+
+    const kb = this.input.keyboard;
+    kb?.on('keydown-LEFT', keyLeft);
+    kb?.on('keydown-A', keyLeft);
+    kb?.on('keydown-RIGHT', keyRight);
+    kb?.on('keydown-D', keyRight);
+    kb?.on('keydown-UP', keyUp);
+    kb?.on('keydown-W', keyUp);
+    kb?.on('keydown-DOWN', keyDown);
+    kb?.on('keydown-S', keyDown);
+    kb?.on('keydown-ENTER', keyConfirm);
+    kb?.on('keydown-SPACE', keyConfirm);
+    kb?.on('keydown-E', keyConfirm);
+
+    this.actionMenuContainer!.once('destroy', () => {
+      kb?.off('keydown-LEFT', keyLeft);
+      kb?.off('keydown-A', keyLeft);
+      kb?.off('keydown-RIGHT', keyRight);
+      kb?.off('keydown-D', keyRight);
+      kb?.off('keydown-UP', keyUp);
+      kb?.off('keydown-W', keyUp);
+      kb?.off('keydown-DOWN', keyDown);
+      kb?.off('keydown-S', keyDown);
+      kb?.off('keydown-ENTER', keyConfirm);
+      kb?.off('keydown-SPACE', keyConfirm);
+      kb?.off('keydown-E', keyConfirm);
     });
   }
 
@@ -1163,7 +1366,7 @@ export class CombatScene extends Phaser.Scene {
 
     const highlightColor = ability.target === 'enemy' ? 0xffaaaa : 0xaaffaa;
     const commitTarget = (t: Unit) => {
-      this.sound.play('sfx-menu-confirm', { volume: 0.5 });
+      playSfx(this, 'sfx-menu-confirm', 0.5);
       this.targetSelectActive = false;
       this.clearTargetSelect();
       this.hideCancelButton();
@@ -1192,7 +1395,11 @@ export class CombatScene extends Phaser.Scene {
     const container = this.add.container(0, 0);
     this.targetMenuContainer = container;
 
-    const btnWidth = leftWidth - 60;
+    // 2 cols when 2+ targets so 4+ options don't overflow the panel. Single
+    // target stays full-width for readability.
+    const cols = targets.length >= 2 ? 2 : 1;
+    const colGap = 10;
+    const btnWidth = (leftWidth - 60 - colGap * (cols - 1)) / cols;
     const btnHeight = targets.length > 4 ? 30 : 40;
     const btnGap = 6;
     const startX = 30;
@@ -1203,13 +1410,15 @@ export class CombatScene extends Phaser.Scene {
     const rows: { chevron: Phaser.GameObjects.Text }[] = [];
 
     targets.forEach((t, i) => {
-      const y = startY + i * (btnHeight + btnGap) + btnHeight / 2;
-      const cx = startX + btnWidth / 2;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = startX + col * (btnWidth + colGap) + btnWidth / 2;
+      const y = startY + row * (btnHeight + btnGap) + btnHeight / 2;
       const bg = this.add
         .rectangle(cx, y, btnWidth, btnHeight, 0x1a2a3a, 0.9)
         .setStrokeStyle(2, highlightColor);
       const chevron = this.add
-        .text(startX + 8, y, '►', {
+        .text(cx - btnWidth / 2 + 8, y, '►', {
           fontFamily: FONT,
           fontSize: '18px',
           color: hexColor,
@@ -1219,7 +1428,7 @@ export class CombatScene extends Phaser.Scene {
       const hpPct = t.maxHp > 0 ? Math.max(0, Math.round((t.hp / t.maxHp) * 100)) : 0;
       const label = t.side === 'enemy' ? `${t.name}  ${hpPct}%` : t.name;
       const txt = this.add
-        .text(startX + 30, y, label, {
+        .text(cx - btnWidth / 2 + 30, y, label, {
           fontFamily: FONT,
           fontSize: btnHeight > 35 ? '18px' : '15px',
           color: '#e6e6e6',
@@ -1261,12 +1470,22 @@ export class CombatScene extends Phaser.Scene {
     };
     updateSelection();
 
+    // Grid nav: LEFT/RIGHT wrap along linear index; UP/DOWN move by cols (clamp).
+    const n = targets.length;
+    const onLeft = () => {
+      selectedIdx = (selectedIdx - 1 + n) % n;
+      updateSelection();
+    };
+    const onRight = () => {
+      selectedIdx = (selectedIdx + 1) % n;
+      updateSelection();
+    };
     const onUp = () => {
-      selectedIdx = (selectedIdx - 1 + targets.length) % targets.length;
+      selectedIdx = Math.max(0, selectedIdx - cols);
       updateSelection();
     };
     const onDown = () => {
-      selectedIdx = (selectedIdx + 1) % targets.length;
+      selectedIdx = Math.min(n - 1, selectedIdx + cols);
       updateSelection();
     };
     const onEnter = () => {
@@ -1274,15 +1493,29 @@ export class CombatScene extends Phaser.Scene {
       if (t) onSelect(t);
     };
     this.input.keyboard?.on('keydown-UP', onUp);
+    this.input.keyboard?.on('keydown-W', onUp);
+    this.input.keyboard?.on('keydown-LEFT', onLeft);
+    this.input.keyboard?.on('keydown-A', onLeft);
     this.input.keyboard?.on('keydown-DOWN', onDown);
+    this.input.keyboard?.on('keydown-S', onDown);
+    this.input.keyboard?.on('keydown-RIGHT', onRight);
+    this.input.keyboard?.on('keydown-D', onRight);
     this.input.keyboard?.on('keydown-ENTER', onEnter);
     this.input.keyboard?.on('keydown-SPACE', onEnter);
+    this.input.keyboard?.on('keydown-E', onEnter);
 
     this.targetMenuCleanup = () => {
       this.input.keyboard?.off('keydown-UP', onUp);
+      this.input.keyboard?.off('keydown-W', onUp);
+      this.input.keyboard?.off('keydown-LEFT', onLeft);
+      this.input.keyboard?.off('keydown-A', onLeft);
       this.input.keyboard?.off('keydown-DOWN', onDown);
+      this.input.keyboard?.off('keydown-S', onDown);
+      this.input.keyboard?.off('keydown-RIGHT', onRight);
+      this.input.keyboard?.off('keydown-D', onRight);
       this.input.keyboard?.off('keydown-ENTER', onEnter);
       this.input.keyboard?.off('keydown-SPACE', onEnter);
+      this.input.keyboard?.off('keydown-E', onEnter);
     };
   }
 
@@ -1351,13 +1584,17 @@ export class CombatScene extends Phaser.Scene {
         wordWrap: { width: leftWidth - 60 },
       })
       .setOrigin(0, 1)
-      .setDepth(150000);
+      .setDepth(150000)
+      .setVisible(false);
     this.actionMenuContainer.add(descText);
 
     const chevrons: Phaser.GameObjects.Text[] = [];
     const bgs: { el: Phaser.GameObjects.Rectangle; baseFill: number }[] = [];
     const BASE_FILL = 0x1a2a3a;
     const HOVER_FILL = 0x2a4252;
+    const selectFns: (() => void)[] = [];
+    const commitFns: (() => void)[] = [];
+    const canUseFlags: boolean[] = [];
 
     ITEM_ORDER.forEach((key, i) => {
       const item = ITEMS[key];
@@ -1394,21 +1631,91 @@ export class CombatScene extends Phaser.Scene {
         chevrons.forEach((c, j) => c.setVisible(j === i));
         bgs.forEach((b, j) => b.el.setFillStyle(j === i ? HOVER_FILL : b.baseFill, 0.9));
         descText.setText(item.description);
+        descText.setVisible(item.description.length > 0);
+      };
+      const clearHover = () => {
+        chevrons.forEach((c) => c.setVisible(false));
+        bgs.forEach((b) => b.el.setFillStyle(b.baseFill, 0.9));
+        descText.setText('');
+        descText.setVisible(false);
+      };
+
+      const commit = () => {
+        playSfx(this, 'sfx-menu-confirm', 0.5);
+        this.chooseItemTarget(attacker, item);
       };
 
       if (canUse) {
         bg.setInteractive({ useHandCursor: true });
         bg.on('pointerover', updateHover);
-        bg.once('pointerup', () => {
-          this.sound.play('sfx-menu-confirm', { volume: 0.5 });
-          this.chooseItemTarget(attacker, item);
-        });
+        bg.on('pointerout', clearHover);
+        bg.once('pointerup', commit);
       } else {
         bg.setInteractive();
         bg.on('pointerover', updateHover);
+        bg.on('pointerout', clearHover);
       }
 
+      selectFns.push(updateHover);
+      commitFns.push(commit);
+      canUseFlags.push(canUse);
+
       this.actionMenuContainer!.add([bg, txt, chevron]);
+    });
+
+    // Keyboard navigation (matches showActionMenu pattern).
+    let selectedIdx = 0;
+    const firstUsable = canUseFlags.findIndex((c) => c);
+    if (firstUsable >= 0) selectedIdx = firstUsable;
+    selectFns[selectedIdx]?.();
+
+    const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
+      const n: number = ITEM_ORDER.length;
+      if (n === 0) return;
+      let next = selectedIdx;
+      if (delta === 'left') next = (selectedIdx - 1 + n) % n;
+      else if (delta === 'right') next = (selectedIdx + 1) % n;
+      else if (delta === 'up') next = Math.max(0, selectedIdx - cols);
+      else if (delta === 'down') next = Math.min(n - 1, selectedIdx + cols);
+      if (next !== selectedIdx) {
+        selectedIdx = next;
+        selectFns[selectedIdx]?.();
+      }
+    };
+
+    const keyLeft = () => navigate('left');
+    const keyRight = () => navigate('right');
+    const keyUp = () => navigate('up');
+    const keyDown = () => navigate('down');
+    const keyConfirm = () => {
+      if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
+    };
+
+    const kb = this.input.keyboard;
+    kb?.on('keydown-LEFT', keyLeft);
+    kb?.on('keydown-A', keyLeft);
+    kb?.on('keydown-RIGHT', keyRight);
+    kb?.on('keydown-D', keyRight);
+    kb?.on('keydown-UP', keyUp);
+    kb?.on('keydown-W', keyUp);
+    kb?.on('keydown-DOWN', keyDown);
+    kb?.on('keydown-S', keyDown);
+    kb?.on('keydown-ENTER', keyConfirm);
+    kb?.on('keydown-SPACE', keyConfirm);
+    kb?.on('keydown-E', keyConfirm);
+
+    this.actionMenuContainer!.once('destroy', () => {
+      kb?.off('keydown-LEFT', keyLeft);
+      kb?.off('keydown-A', keyLeft);
+      kb?.off('keydown-RIGHT', keyRight);
+      kb?.off('keydown-D', keyRight);
+      kb?.off('keydown-UP', keyUp);
+      kb?.off('keydown-W', keyUp);
+      kb?.off('keydown-DOWN', keyDown);
+      kb?.off('keydown-S', keyDown);
+      kb?.off('keydown-ENTER', keyConfirm);
+      kb?.off('keydown-SPACE', keyConfirm);
+      kb?.off('keydown-E', keyConfirm);
     });
 
     const backY = startY + 2 * (btnHeight + btnGap) + btnHeight / 2;
@@ -1424,7 +1731,7 @@ export class CombatScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     backBg.once('pointerup', () => {
-      this.sound.play('sfx-menu-cancel', { volume: 0.5 });
+      playSfx(this, 'sfx-menu-cancel', 0.5);
       this.itemMenuOpen = false;
       this.showActionMenu(attacker);
     });
@@ -1466,7 +1773,7 @@ export class CombatScene extends Phaser.Scene {
       t.sprite.setInteractive({ useHandCursor: true });
       t.sprite.setTint(color);
       t.sprite.once('pointerup', () => {
-        this.sound.play('sfx-menu-confirm', { volume: 0.5 });
+        playSfx(this, 'sfx-menu-confirm', 0.5);
         this.itemTargetSelectActive = false;
         this.hideCancelButton();
         this.clearTargetSelect();
@@ -1476,17 +1783,20 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private executeItem(attacker: Unit, target: Unit | null, item: ItemDef): void {
+    // Turn committed — drop the above-head active marker.
+    attacker.activeTurnMarker?.destroy();
+    attacker.activeTurnMarker = undefined;
     const run = getRun();
     run.inventory[item.id] = Math.max(0, (run.inventory[item.id] ?? 0) - 1);
 
-    this.sound.play('sfx-item-use', { volume: 0.5 });
+    playSfx(this, 'sfx-item-use', 0.5);
 
     switch (item.effect) {
       case 'heal': {
         if (!target) break;
         const heal = Math.round(item.power ?? 20);
         target.hp = Math.min(target.maxHp, target.hp + heal);
-        this.spawnFloatNumber(target, `+${heal}`, '#88ff88');
+        spawnFloatNumber(this, target, `+${heal}`, '#88ff88');
         this.showMessage(`${attacker.name} uses ${item.label} on ${target.name} (+${heal})`);
         break;
       }
@@ -1494,7 +1804,7 @@ export class CombatScene extends Phaser.Scene {
         if (!target) break;
         const restore = Math.round(item.power ?? 10);
         target.mp = Math.min(target.maxMp, target.mp + restore);
-        this.spawnFloatNumber(target, `+${restore} MP`, '#88aaff');
+        spawnFloatNumber(this, target, `+${restore} MP`, '#88aaff');
         this.showMessage(`${attacker.name} uses ${item.label} on ${target.name} (+${restore} MP)`);
         break;
       }
@@ -1504,7 +1814,7 @@ export class CombatScene extends Phaser.Scene {
         target.hp = hp;
         target.ko = false;
         this.resetSpriteForRevive(target);
-        this.spawnFloatNumber(target, `REVIVE`, '#ffdd55');
+        spawnFloatNumber(this, target, `REVIVE`, '#ffdd55');
         this.updatePanelRow(target);
         this.showMessage(`${attacker.name} revives ${target.name}!`);
         break;
@@ -1515,6 +1825,8 @@ export class CombatScene extends Phaser.Scene {
           e.missing = true;
           this.updateStatusIcon(e);
         }
+        playSfx(this, 'sfx-smoke-grenade', 0.8);
+        this.spawnSmokeClouds(enemies);
         this.showMessage(`${attacker.name} tosses a ${item.label} — enemies will miss`);
         break;
       }
@@ -1560,13 +1872,18 @@ export class CombatScene extends Phaser.Scene {
       mpCost: ability.mpCost,
       power: ability.power,
     });
+    // Turn committed — drop the above-head active marker.
+    attacker.activeTurnMarker?.destroy();
+    attacker.activeTurnMarker = undefined;
     attacker.mp = Math.max(0, attacker.mp - ability.mpCost);
 
-    // Decrement per-combat use counter if this ability has a limit.
-    if (ability.maxUsesPerCombat !== undefined) {
+    // Decrement per-rest use counter if this ability has a limit. Persists
+    // across combats via run state; refilled at the Rest scene.
+    if (ability.maxUsesPerRest !== undefined) {
+      const run = getRun();
       const key = `${attacker.id}:${ability.id}`;
-      const left = this.abilityUsesRemaining.get(key) ?? 0;
-      this.abilityUsesRemaining.set(key, Math.max(0, left - 1));
+      const left = run.abilityUsesRemaining[key] ?? 0;
+      run.abilityUsesRemaining[key] = Math.max(0, left - 1);
     }
 
     switch (ability.effect) {
@@ -1580,9 +1897,13 @@ export class CombatScene extends Phaser.Scene {
 
         const applyImpact = () => {
           const sfxKey = ability.sfxKey ?? (isMagic ? 'sfx-spell-cast' : 'sfx-attack-melee');
-          this.sound.play(sfxKey, { volume: 1 });
-          if (crit) this.sound.play('sfx-critical-hit', { volume: 1 });
-          this.applyDamage(target, damage, crit, ability.element);
+          playSfx(this, sfxKey, 1);
+          if (this.tryEvasion(target, ability)) {
+            this.showMessage(`${target.name} dodges ${attacker.name}'s ${ability.label}!`);
+            return;
+          }
+          if (crit) playSfx(this, 'sfx-critical-hit', 1);
+          this.applyDamage(target, damage, crit, ability.element, attacker);
           this.showMessage(
             crit
               ? `${attacker.name} uses ${ability.label} on ${target.name} — CRITICAL (${damage})`
@@ -1606,16 +1927,16 @@ export class CombatScene extends Phaser.Scene {
         break;
       }
       case 'heal': {
-        this.sound.play(ability.sfxKey ?? 'sfx-heal-shimmer', { volume: ability.sfxKey ? 1 : 0.5 });
+        playSfx(this, ability.sfxKey ?? 'sfx-heal-shimmer', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
         const heal = Math.round(ability.power ?? 20);
         target.hp = Math.min(target.maxHp, target.hp + heal);
-        this.spawnFloatNumber(target, `+${heal}`, '#88ff88');
+        spawnFloatNumber(this, target, `+${heal}`, '#88ff88');
         this.showMessage(`${attacker.name} ${ability.label}s ${target.name} for ${heal}`);
         break;
       }
       case 'guard': {
-        this.sound.play(ability.sfxKey ?? 'sfx-guard-raise', { volume: ability.sfxKey ? 1 : 0.5 });
+        playSfx(this, ability.sfxKey ?? 'sfx-guard-raise', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
         attacker.guarding = true;
         this.showMessage(`${attacker.name} raises their shield — GUARD`);
@@ -1650,14 +1971,14 @@ export class CombatScene extends Phaser.Scene {
         }
 
         const applyImpact = () => {
-          this.sound.play(ability.sfxKey ?? 'sfx-attack-melee', { volume: 1 });
-          if (crit) this.sound.play('sfx-critical-hit', { volume: 1 });
-          this.applyDamage(target, finalDamage, crit);
+          playSfx(this, ability.sfxKey ?? 'sfx-attack-melee', 1);
+          if (crit) playSfx(this, 'sfx-critical-hit', 1);
+          this.applyDamage(target, finalDamage, crit, undefined, attacker);
           if (lootedItemId) {
             const run = getRun();
             run.inventory[lootedItemId] = (run.inventory[lootedItemId] ?? 0) + 1;
             const lootLabel = ITEMS[lootedItemId]?.label ?? lootedItemId;
-            this.spawnFloatNumber(target, `+1 ${lootLabel}`, '#88ddff');
+            spawnFloatNumber(this, target, `+1 ${lootLabel}`, '#88ddff');
             this.showMessage(
               crit
                 ? `${attacker.name} SALVAGE — critical (${finalDamage}) — found ${lootLabel}!`
@@ -1688,7 +2009,7 @@ export class CombatScene extends Phaser.Scene {
         break;
       }
       case 'pulse': {
-        this.sound.play(ability.sfxKey ?? 'sfx-spell-cast', { volume: ability.sfxKey ? 1 : 0.5 });
+        playSfx(this, ability.sfxKey ?? 'sfx-spell-cast', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
         const base = calculateDamage(attacker, target, ability.power ?? 1);
         let finalDamage: number;
@@ -1702,16 +2023,16 @@ export class CombatScene extends Phaser.Scene {
           finalDamage = base;
           this.showMessage(`${attacker.name} PULSE on ${target.name} — ${finalDamage}`);
         }
-        this.applyDamage(target, finalDamage, false, ability.element);
+        this.applyDamage(target, finalDamage, false, ability.element, attacker);
         break;
       }
       case 'slow': {
         const slowAnimKey = `${attacker.id}-attack-west`;
         const hasSlowAnim = this.anims.exists(slowAnimKey) && attacker.side === 'party';
         const applySlowImpact = () => {
-          this.sound.play(ability.sfxKey ?? 'sfx-spell-cast', { volume: ability.sfxKey ? 1 : 0.5 });
+          playSfx(this, ability.sfxKey ?? 'sfx-spell-cast', ability.sfxKey ? 1 : 0.5);
           const damage = calculateDamage(attacker, target, ability.power ?? 0.6, ability.element);
-          this.applyDamage(target, damage, false, ability.element);
+          this.applyDamage(target, damage, false, ability.element, attacker);
           target.atbModifier = 0.5;
           target.atbModifierTurnsLeft = 2;
           this.updateStatusIcon(target);
@@ -1730,41 +2051,31 @@ export class CombatScene extends Phaser.Scene {
         applySlowImpact();
         break;
       }
-      case 'sleep': {
-        this.sound.play(ability.sfxKey ?? 'sfx-status-apply', { volume: ability.sfxKey ? 1 : 0.5 });
-        this.playCastTween(attacker);
-        target.sleeping = true;
-        target.atb = 0;
-        this.updateStatusIcon(target);
-        this.spawnFloatNumber(target, 'z z z', '#88ccff');
-        this.showMessage(`${target.name} forced into STANDBY`);
-        break;
-      }
       case 'boost': {
-        this.sound.play(ability.sfxKey ?? 'sfx-status-apply', { volume: ability.sfxKey ? 1 : 0.5 });
+        playSfx(this, ability.sfxKey ?? 'sfx-status-apply', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
         target.atbModifier = 2;
         target.atbModifierTurnsLeft = 1;
         this.updateStatusIcon(target);
-        this.spawnFloatNumber(target, 'STIM', '#ffdd88');
-        this.showMessage(`${attacker.name} STIMs ${target.name} — ATB doubled`);
+        spawnFloatNumber(this, target, 'AMP', '#ffdd88');
+        this.showMessage(`${attacker.name} AMPs ${target.name} — gauge doubled`);
         break;
       }
       case 'shield-buff': {
-        this.sound.play(ability.sfxKey ?? 'sfx-status-apply', { volume: ability.sfxKey ? 1 : 0.5 });
+        playSfx(this, ability.sfxKey ?? 'sfx-status-apply', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
         target.shielded = true;
         this.updateStatusIcon(target);
-        this.spawnFloatNumber(target, 'SHIELD', '#88ccff');
+        spawnFloatNumber(this, target, 'SHIELD', '#88ccff');
         this.showMessage(`${attacker.name} SHIELDs ${target.name}`);
         break;
       }
       case 'taunt': {
-        this.sound.play(ability.sfxKey ?? 'sfx-status-apply', { volume: ability.sfxKey ? 1 : 0.5 });
+        playSfx(this, ability.sfxKey ?? 'sfx-status-apply', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
         target.tauntedBy = attacker.id;
         this.updateStatusIcon(target);
-        this.spawnFloatNumber(target, 'TAUNT', '#ff9955');
+        spawnFloatNumber(this, target, 'TAUNT', '#ff9955');
         this.showMessage(`${attacker.name} TAUNTs ${target.name} — it's forced to attack them`);
         break;
       }
@@ -1781,7 +2092,7 @@ export class CombatScene extends Phaser.Scene {
         const fireHit = (i: number) => {
           if (target.ko) return;
           const dmg = calculateDamage(attacker, target, perHitPower);
-          this.applyDamage(target, dmg);
+          this.applyDamage(target, dmg, false, undefined, attacker);
           totalDamage += dmg;
           hitsLanded++;
           if (i < hits - 1) {
@@ -1792,8 +2103,7 @@ export class CombatScene extends Phaser.Scene {
         };
 
         const applyImpact = () => {
-          const flurrySfx = this.sound.add(ability.sfxKey ?? 'sfx-attack-melee');
-          flurrySfx.play({ volume: 1 });
+          const flurrySfx = playSfx(this, ability.sfxKey ?? 'sfx-attack-melee', 1);
           this.time.delayedCall(700, () => flurrySfx.stop());
           fireHit(0);
         };
@@ -1849,26 +2159,66 @@ export class CombatScene extends Phaser.Scene {
     });
   }
 
-  private applyDamage(target: Unit, damage: number, crit = false, element?: Element): void {
+  private tryEvasion(target: Unit, ability: AbilityDef): boolean {
+    if (!target.enemyDef?.evasive) return false;
+    // Basic physical attacks only: FIGHT/SLICE/STRIKE — no element, no sfxKey, no MP cost.
+    const isBasicPhysical =
+      ability.effect === 'damage' && !ability.element && !ability.sfxKey && ability.mpCost === 0;
+    if (!isBasicPhysical) return false;
+    if (Math.random() >= 0.3) return false;
+    spawnFloatNumber(this, target, 'DODGE', '#8acfff');
+    if (target.sprite) {
+      // Pause the idle bob so it doesn't fight the dodge y-tween.
+      this.stopIdleBob(target);
+      target.sprite.y = target.posY;
+      this.tweens.add({
+        targets: target.sprite,
+        x: target.posX + 14,
+        y: target.posY - 10,
+        duration: 110,
+        yoyo: true,
+        ease: 'Sine.easeOut',
+        onComplete: () => {
+          if (!target.sprite || target.ko) return;
+          target.sprite.x = target.posX;
+          target.sprite.y = target.posY;
+          this.startIdleBob(target);
+        },
+      });
+    }
+    return true;
+  }
+
+  private applyDamage(
+    target: Unit,
+    damage: number,
+    crit = false,
+    element?: Element,
+    attacker?: Unit,
+  ): void {
     let finalDamage = damage;
     if (target.shielded) {
       finalDamage = Math.max(1, Math.floor(finalDamage / 2));
     }
     target.hp = Math.max(0, target.hp - finalDamage);
-    this.spawnDamageNumber(target, finalDamage, crit, element);
-    this.flashSprite(target);
+    if (attacker && attacker.side === 'party' && target.side === 'enemy') {
+      target.lastDamagerId = attacker.id;
+    }
+    const resisted =
+      !!element &&
+      element !== 'none' &&
+      target.enemyDef?.vulnerability !== element &&
+      !!target.enemyDef?.resistances?.includes(element);
+    spawnDamageNumber(this, target, finalDamage, crit, element, resisted);
+    flashSprite(this, target);
 
     if (target.side !== 'enemy' && finalDamage > 0) {
-      this.sound.play('sfx-damage-taken', { volume: 0.5 });
+      playSfx(this, 'sfx-damage-taken', 0.5);
     }
 
     // Hit reaction: shake tween (frame-based hit animations reverted — they didn't look clean)
-    if (!target.ko) this.playHitShake(target);
+    if (!target.ko) playHitShake(this, target);
 
-    if (target.sleeping) {
-      target.sleeping = false;
-      this.updateStatusIcon(target);
-    }
     log('DAMAGE', `${target.id} took ${finalDamage}`, {
       side: target.side,
       hp: target.hp,
@@ -1879,9 +2229,9 @@ export class CombatScene extends Phaser.Scene {
       target.ko = true;
       this.stopIdleBob(target);
       if (target.side === 'enemy') {
-        this.sound.play('sfx-enemy-death', { volume: 0.5 });
+        playSfx(this, 'sfx-enemy-death', 0.5);
       } else {
-        this.sound.play('sfx-party-ko', { volume: 0.5 });
+        playSfx(this, 'sfx-party-ko', 0.5);
       }
       // KO'd party: slightly faded (so they're visibly still there for revive targeting).
       // KO'd enemy: fade to 0 entirely — dead enemies are removed from the scene.
@@ -1960,6 +2310,35 @@ export class CombatScene extends Phaser.Scene {
 
     const behavior = enemy.enemyDef?.behavior ?? 'random';
 
+    // Boss rotation — if the enemy has Shockwave, cycle through 3 moves:
+    //   turnCount % 3 === 0 → normal single-target
+    //   turnCount % 3 === 1 → Shockwave (damage + ATB reset on one party member)
+    //   turnCount % 3 === 2 → signature AoE (coolant slam on whole party)
+    // Otherwise fall back to the old 2-move alternation for signatureAoE-only bosses.
+    const sig = enemy.enemyDef?.signatureAoE;
+    const shock = enemy.enemyDef?.shockwave;
+    enemy.turnCount = (enemy.turnCount ?? 0) + 1;
+
+    if (shock && sig) {
+      const phase = (enemy.turnCount - 1) % 3;
+      if (phase === 1) {
+        this.playShockwaveAttack(enemy, shock);
+        return;
+      }
+      if (phase === 2) {
+        this.playSignatureAoE(enemy, sig);
+        return;
+      }
+      // phase 0 → fall through to normal attack below
+    } else if (sig) {
+      if (enemy.signatureNext) {
+        enemy.signatureNext = false;
+        this.playSignatureAoE(enemy, sig);
+        return;
+      }
+      enemy.signatureNext = true;
+    }
+
     if (behavior === 'multi-hit') {
       // Nanite Swarm: fly into the party, release a burst hitting all, fly back.
       const frontmost = living.reduce((acc, u) => (u.posX < acc.posX ? u : acc));
@@ -1976,7 +2355,7 @@ export class CombatScene extends Phaser.Scene {
           if (enemy.missing) {
             enemy.missing = false;
             this.updateStatusIcon(enemy);
-            this.spawnFloatNumber(enemy, 'MISS', '#aaaaaa');
+            spawnFloatNumber(this, enemy, 'MISS', '#aaaaaa');
             this.showMessage(`${enemy.name} is blinded by smoke!`);
             return;
           }
@@ -1986,7 +2365,7 @@ export class CombatScene extends Phaser.Scene {
             (u) => (u.side === 'party' || u.side === 'escort') && !u.ko,
           );
           for (const t of targets) {
-            const damage = Math.max(1, calculateDamage(enemy, t, 0.7));
+            const damage = Math.max(1, calculateDamage(enemy, t, 0.85));
             this.applyDamage(t, damage);
           }
         },
@@ -2002,6 +2381,7 @@ export class CombatScene extends Phaser.Scene {
     }
 
     let target: Unit;
+    const wasTauntedThisTurn = enemy.tauntedBy !== null;
     if (enemy.tauntedBy) {
       const taunter = this.units.find((u) => u.id === enemy.tauntedBy && !u.ko);
       if (taunter) {
@@ -2014,11 +2394,30 @@ export class CombatScene extends Phaser.Scene {
     } else if (behavior === 'target-escort') {
       const escort = this.units.find((u) => u.side === 'escort' && !u.ko);
       target = escort ?? living[Math.floor(Math.random() * living.length)];
+    } else if (behavior === 'prefer-low-hp') {
+      // Weighted random preferring lower-HP targets. Full-HP units still have
+      // a ~1/3 chance vs a 0-HP unit (weight 1 vs 3).
+      const weights = living.map((u) => {
+        const maxHp = u.maxHp || 1;
+        const missingFrac = Math.max(0, Math.min(1, 1 - u.hp / maxHp));
+        return 1 + 2 * missingFrac;
+      });
+      const total = weights.reduce((acc, w) => acc + w, 0);
+      let roll = Math.random() * total;
+      let picked = living[0];
+      for (let i = 0; i < living.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0) {
+          picked = living[i];
+          break;
+        }
+      }
+      target = picked;
     } else {
       target = living[Math.floor(Math.random() * living.length)];
     }
 
-    const ignoreGuard = behavior === 'ignore-guard';
+    const ignoreGuard = !!enemy.enemyDef?.ignoresGuard;
     const guardian = this.units.find((u) => u.side === 'party' && u.guarding && !u.ko);
     const redirected = !ignoreGuard && guardian && target !== guardian;
 
@@ -2027,34 +2426,57 @@ export class CombatScene extends Phaser.Scene {
     // happened at impact, so Wirehead would walk toward the escort (dimming
     // party on the way) even when GUARD was about to intercept.
     let guardHalved = false;
+
+    // Sentry: decide ranged vs melee BEFORE the message so the log matches.
+    // 60% plasma bolt / 40% melee swing.
+    const sentryUseRanged =
+      enemy.id === 'sentry' &&
+      Math.random() < 0.6 &&
+      this.anims.exists('sentry-attack-thermal-east');
+    const attackVerb =
+      enemy.id === 'sentry' && !sentryUseRanged
+        ? 'attacks'
+        : (enemy.enemyDef?.attackName ?? 'attacks');
+
     if (redirected && guardian) {
       target = guardian;
       guardHalved = true;
       this.showMessage(`${guardian.name} intercepts ${enemy.name}'s attack!`);
     } else if (!ignoreGuard && target.guarding) {
       guardHalved = true;
-      this.showMessage(`${enemy.name} attacks ${target.name}!`);
+      this.showMessage(`${enemy.name} ${attackVerb} ${target.name}!`);
     } else {
-      this.showMessage(`${enemy.name} attacks ${target.name}!`);
+      this.showMessage(`${enemy.name} ${attackVerb} ${target.name}!`);
+    }
+
+    // Ranged attackers (Sentry plasma bolt) always aim at the center of the
+    // party for composition — unless they were taunted this turn, in which
+    // case the taunter override remains.
+    if (enemy.id === 'sentry' && !wasTauntedThisTurn) {
+      const center = this.getCenterPartyMember();
+      if (center) target = center;
     }
 
     const facing = getUnitFacing(enemy);
     const attackAnimKey = `${enemy.id}-attack-${facing}`;
     const hasAnim = this.anims.exists(attackAnimKey);
 
+    const attackElement = enemy.enemyDef?.attackElement;
     const resolveImpact = () => {
       if (enemy.missing) {
         enemy.missing = false;
         this.updateStatusIcon(enemy);
-        this.spawnFloatNumber(enemy, 'MISS', '#aaaaaa');
+        this.checkSmokeExpiry();
+        spawnFloatNumber(this, enemy, 'MISS', '#aaaaaa');
         this.showMessage(`${enemy.name} is blinded by smoke!`);
         return;
       }
       const enemyAttackSfx = enemy.enemyDef?.attackSfxKey ?? 'sfx-enemy-attack';
-      this.sound.play(enemyAttackSfx, { volume: 1 });
-      let damage = calculateDamage(enemy, target, 1);
+      playSfx(this, enemyAttackSfx, 1);
+      let damage = calculateDamage(enemy, target, 1, attackElement);
       if (guardHalved) damage = Math.max(1, Math.floor(damage / 2));
-      this.applyDamage(target, damage);
+      if (attackElement) this.playElementalImpact(target, attackElement);
+      this.applyDamage(target, damage, false, attackElement);
     };
 
     const finalize = () => {
@@ -2063,7 +2485,26 @@ export class CombatScene extends Phaser.Scene {
       this.checkEndConditions();
     };
 
-    if (hasAnim) {
+    if (enemy.id === 'sentry') {
+      // Sentry ranged/melee split was decided above so the combat log matches.
+      if (sentryUseRanged) {
+        this.playPartialAdvanceRangedAttack(
+          enemy,
+          target,
+          'sentry-attack-thermal-east',
+          attackElement ?? 'thermal',
+          resolveImpact,
+          finalize,
+          -12, // muzzleYOffset — slightly higher (barrel is above sprite center)
+          6, // bolt fires on frame 6
+          undefined, // boltColorOverride
+          100, // muzzleXOffset — well forward, aligned with barrel tip
+        );
+      } else {
+        // Melee swing: walk to target, swing, walk back.
+        this.playFullAttackSequence(enemy, target, attackAnimKey, resolveImpact, finalize);
+      }
+    } else if (hasAnim) {
       this.playFullAttackSequence(enemy, target, attackAnimKey, resolveImpact, finalize);
     } else if (enemy.id === 'scoutdrone') {
       // Floaty enemy — fly over to the target, nudge + impact, fly back.
@@ -2093,51 +2534,401 @@ export class CombatScene extends Phaser.Scene {
     }
   }
 
-  private spawnDamageNumber(u: Unit, damage: number, crit = false, element?: Element): void {
-    const glyph = element ? VULNERABILITY_GLYPH[element] : '';
-    const suffix = glyph ? ` ${glyph}` : '';
-    if (crit) {
-      this.spawnFloatNumber(u, `${damage}!${suffix}`, '#ff5533', {
-        fontSize: '48px',
-        stroke: '#4a0000',
-        strokeThickness: 6,
-      });
-    } else {
-      this.spawnFloatNumber(u, `${damage}${suffix}`, '#ffdd55');
+  /**
+   * Spawn animated smoke-cloud sprites over each enemy using the SpriteCook
+   * VFX anim. Clouds drift, pulse, and persist until every enemy has used
+   * their miss (see `checkSmokeExpiry`).
+   */
+  private spawnSmokeClouds(enemies: Unit[]): void {
+    this.clearSmokeClouds();
+    for (const e of enemies) {
+      if (!e.sprite) continue;
+      const base = { x: e.sprite.x, y: e.sprite.y };
+      const cloudsPerEnemy = 2;
+      for (let i = 0; i < cloudsPerEnemy; i++) {
+        const jitterX = (Math.random() - 0.5) * 50;
+        const jitterY = (Math.random() - 0.5) * 30;
+        const scale = 0.8 + Math.random() * 0.4;
+        const cloud = this.add
+          .sprite(base.x + jitterX, base.y + jitterY, 'smoke-vfx-000')
+          .setAlpha(0)
+          .setScale(scale)
+          .setDepth(99980);
+        // Start the anim at a random frame so the clouds don't pulse in unison
+        cloud.play({ key: 'smoke-vfx', startFrame: Math.floor(Math.random() * 8) });
+        // Fade in
+        this.tweens.add({
+          targets: cloud,
+          alpha: 0.55 + Math.random() * 0.15,
+          duration: 260,
+          ease: 'Sine.easeOut',
+        });
+        // Gentle drift upward over time
+        const driftX = (Math.random() - 0.5) * 30;
+        const driftY = -18 - Math.random() * 10;
+        this.tweens.add({
+          targets: cloud,
+          x: cloud.x + driftX,
+          y: cloud.y + driftY,
+          duration: 2600 + Math.random() * 800,
+          ease: 'Sine.easeInOut',
+          yoyo: true,
+          repeat: -1,
+        });
+        this.smokeClouds.push(cloud);
+      }
     }
   }
 
-  private spawnFloatNumber(
-    u: Unit,
-    text: string,
-    color: string,
-    opts?: { fontSize?: string; stroke?: string; strokeThickness?: number },
+  /**
+   * If no living enemy still has missing=true, fade and destroy all active
+   * smoke clouds. Called after each enemy's miss resolves.
+   */
+  private checkSmokeExpiry(): void {
+    if (this.smokeClouds.length === 0) return;
+    const anyStillMissing = this.units.some(
+      (u) => u.side === 'enemy' && !u.ko && u.missing,
+    );
+    if (anyStillMissing) return;
+    this.clearSmokeClouds();
+  }
+
+  private clearSmokeClouds(): void {
+    for (const cloud of this.smokeClouds) {
+      this.tweens.killTweensOf(cloud);
+      this.tweens.add({
+        targets: cloud,
+        alpha: 0,
+        duration: 400,
+        ease: 'Sine.easeIn',
+        onComplete: () => cloud.destroy(),
+      });
+    }
+    this.smokeClouds = [];
+  }
+
+  private static readonly ELEMENT_COLOR: Record<Element, number> = {
+    thermal: 0xff6a1f,
+    coolant: 0x5ac8ff,
+    surge: 0xffe04a,
+    none: 0xffffff,
+  };
+
+  /**
+   * Partial-advance ranged attack: walks a fraction of the way toward the
+   * target (so the attacker takes a few steps without closing the gap), plays
+   * the attack anim in place, launches an elemental projectile from the
+   * attacker to the target, walks back to origin. onImpact fires when the
+   * projectile lands.
+   */
+  private playPartialAdvanceRangedAttack(
+    attacker: Unit,
+    target: Unit,
+    animKey: string,
+    element: Element,
+    onImpact: () => void,
+    onComplete: () => void,
+    // Vertical offset from sprite center where the projectile launches.
+    // Negative = higher on the sprite (e.g. chest); 0 = center (default, barrel-aligned).
+    muzzleYOffset: number = 0,
+    // 1-based frame index within the attack anim where the projectile launches.
+    // e.g. 5 = fire on the 5th frame. Default ~ 500ms after anim start.
+    boltFrameIndex?: number,
+    // Optional override color for the projectile. Defaults to the element color.
+    boltColorOverride?: number,
+    // Forward offset (toward the target) from sprite center. Use to align the
+    // muzzle point with the actual barrel/chest in the attack sprite frame.
+    muzzleXOffset: number = 0,
   ): void {
-    if (!u.sprite) return;
-    const style: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: FONT,
-      fontSize: opts?.fontSize ?? '32px',
-      color,
-      stroke: opts?.stroke ?? '#000000',
-      strokeThickness: opts?.strokeThickness ?? 4,
-    };
-    const num = this.add
-      .text(u.sprite.x, u.sprite.y - 60, text, style)
-      .setOrigin(0.5)
-      .setDepth(100000); // always on top of every sprite, even walk-forward
+    if (!attacker.sprite || !target.sprite) {
+      onImpact();
+      onComplete();
+      return;
+    }
+    const sprite = attacker.sprite;
+    const color = boltColorOverride ?? CombatScene.ELEMENT_COLOR[element] ?? 0xffffff;
+    const originX = attacker.posX;
+    const originY = attacker.posY;
+    const dirX = target.posX < originX ? -1 : 1;
+    const advanceDist = Math.min(80, Math.abs(target.posX - originX) * 0.35);
+    const advanceX = originX + dirX * advanceDist;
+    const advanceY = originY;
+
+    const walkAnimKey = `${attacker.id}-walk-east`;
+    const hasWalk = this.anims.exists(walkAnimKey);
+    this.stopIdleBob(attacker);
+    sprite.setDepth(DEPTH_WALK_FORWARD_BASE + sprite.y);
+
+    // Hide the HP bar + status icon while the attacker walks out — they're
+    // anchored to the home position and would otherwise float over empty space.
+    const hpBarAlpha = attacker.enemyHpBar?.alpha ?? 0;
+    const hpBarBgAlpha = attacker.enemyHpBarBg?.alpha ?? 0;
+    const statusAlpha = attacker.statusIcon?.alpha ?? 0;
+    this.tweens.killTweensOf([attacker.enemyHpBar, attacker.enemyHpBarBg].filter(Boolean));
+    attacker.enemyHpBar?.setAlpha(0);
+    attacker.enemyHpBarBg?.setAlpha(0);
+    attacker.statusIcon?.setAlpha(0);
+
+    // Dim other living enemies so the attacker visually pops. Mirrors the
+    // peer-dim behavior in playFullAttackSequence.
+    const dimmedPeers: { unit: Unit; originalAlpha: number }[] = [];
+    if (attacker.side === 'enemy') {
+      for (const other of this.units) {
+        if (other === attacker) continue;
+        if (other.side !== 'enemy') continue;
+        if (other.ko) continue;
+        if (!other.sprite) continue;
+        dimmedPeers.push({ unit: other, originalAlpha: other.sprite.alpha });
+        other.sprite.setAlpha(DIMMED_PEER_ENEMY_ALPHA);
+      }
+    }
+
+    // Compute bolt launch delay: if a frame index was supplied, derive it from
+    // the anim's framerate so it stays synced when framerates change. Otherwise
+    // fall back to a fixed 500ms (original behavior).
+    const anim = this.anims.get(animKey);
+    const frameRate = anim?.frameRate ?? 7;
+    const boltDelay =
+      boltFrameIndex !== undefined ? Math.max(0, (boltFrameIndex - 1) * (1000 / frameRate)) : 500;
+
+    // Step 1: walk forward a bit.
+    if (hasWalk) sprite.play({ key: walkAnimKey, repeat: -1 });
     this.tweens.add({
-      targets: num,
-      y: num.y - 50,
-      alpha: 0,
-      duration: 800,
-      onComplete: () => num.destroy(),
+      targets: sprite,
+      x: advanceX,
+      y: advanceY,
+      duration: 350,
+      ease: 'Linear',
+      onComplete: () => {
+        if (hasWalk) sprite.anims.stop();
+        sprite.setTexture(attacker.spriteKey);
+        // Step 2: play firing anim in place.
+        sprite.play(animKey);
+        // Launch the bolt on the specified frame (or at 500ms if unset).
+        this.time.delayedCall(boltDelay, () => {
+          if (!target.sprite) {
+            onImpact();
+            onComplete();
+            return;
+          }
+          const startX = sprite.x + dirX * muzzleXOffset;
+          const startY = sprite.y + muzzleYOffset;
+          const distance = Phaser.Math.Distance.Between(
+            startX,
+            startY,
+            target.sprite.x,
+            target.sprite.y,
+          );
+          const travelDuration = Math.max(220, Math.min(480, distance * 1.3));
+          const glow = this.add.circle(startX, startY, 14, color, 0.35).setDepth(99999);
+          const core = this.add.circle(startX, startY, 6, color, 1).setDepth(99999);
+          this.tweens.add({
+            targets: [glow, core],
+            x: target.sprite.x,
+            y: target.sprite.y,
+            duration: travelDuration,
+            ease: 'Sine.easeIn',
+            onComplete: () => {
+              glow.destroy();
+              core.destroy();
+              onImpact();
+            },
+          });
+        });
+        sprite.once('animationcomplete', () => {
+          sprite.setTexture(attacker.spriteKey);
+          // Step 3: walk back to origin.
+          if (hasWalk) sprite.play({ key: walkAnimKey, repeat: -1 });
+          this.tweens.add({
+            targets: sprite,
+            x: originX,
+            y: originY,
+            duration: 350,
+            ease: 'Linear',
+            onComplete: () => {
+              if (hasWalk) sprite.anims.stop();
+              sprite.setTexture(attacker.spriteKey);
+              sprite.setDepth(DEPTH_ENEMY_BASE + attacker.posY);
+              // Restore HP bar + status icon now that the sprite is home.
+              if (!attacker.ko) {
+                attacker.enemyHpBar?.setAlpha(hpBarAlpha);
+                attacker.enemyHpBarBg?.setAlpha(hpBarBgAlpha);
+                attacker.statusIcon?.setAlpha(statusAlpha);
+                this.playIdleFor(attacker);
+              }
+              // Restore dimmed peers.
+              for (const peer of dimmedPeers) {
+                peer.unit.sprite?.setAlpha(peer.originalAlpha);
+              }
+              onComplete();
+            },
+          });
+        });
+      },
     });
   }
 
-  private flashSprite(u: Unit): void {
-    if (!u.sprite) return;
-    u.sprite.setTint(0xff4444);
-    this.time.delayedCall(140, () => u.sprite?.clearTint());
+  /**
+   * Visual hit for an elemental enemy attack: a tinted shockwave ring expanding
+   * from the target plus element-specific flavor (sparks / icicles / arc).
+   */
+  /**
+   * Big centered shockwave burst for boss signature ground-slam attacks.
+   * Spawns from the attacker's feet: two expanding rings + radial ice shards +
+   * low ground-level frost smear. Larger and more dramatic than per-target
+   * playElementalImpact.
+   */
+  private playSignatureSlamBurst(attacker: Unit, element: Element): void {
+    if (!attacker.sprite) return;
+    const color = CombatScene.ELEMENT_COLOR[element] ?? 0xffffff;
+    const x = attacker.sprite.x;
+    // Anchor the burst near the attacker's feet, not center.
+    const y = attacker.sprite.y + attacker.sprite.displayHeight * 0.35;
+
+    // Inner ring — bright, fast.
+    const innerRing = this.add
+      .circle(x, y, 24, color, 0)
+      .setStrokeStyle(5, color, 1)
+      .setDepth(99998);
+    this.tweens.add({
+      targets: innerRing,
+      scale: 5,
+      alpha: 0,
+      duration: 480,
+      ease: 'Cubic.easeOut',
+      onComplete: () => innerRing.destroy(),
+    });
+
+    // Outer ring — slower, wider, thinner stroke.
+    const outerRing = this.add
+      .circle(x, y, 24, color, 0)
+      .setStrokeStyle(3, 0xffffff, 0.9)
+      .setDepth(99997);
+    this.tweens.add({
+      targets: outerRing,
+      scale: 8,
+      alpha: 0,
+      duration: 680,
+      delay: 80,
+      ease: 'Cubic.easeOut',
+      onComplete: () => outerRing.destroy(),
+    });
+
+    // Low-profile frost smear along the ground — squashed ellipse.
+    const smear = this.add.ellipse(x, y, 40, 14, color, 0.55).setDepth(99996);
+    this.tweens.add({
+      targets: smear,
+      scaleX: 6,
+      scaleY: 2,
+      alpha: 0,
+      duration: 520,
+      ease: 'Cubic.easeOut',
+      onComplete: () => smear.destroy(),
+    });
+
+    // Radial ice shards — more numerous and larger than per-target impact.
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const dist = 90 + Math.random() * 40;
+      const endX = x + Math.cos(angle) * dist;
+      const endY = y + Math.sin(angle) * dist * 0.55; // flattened downward
+      const shard = this.add
+        .triangle(x, y, 0, -8, 4, 8, -4, 8, 0xd8f4ff)
+        .setStrokeStyle(1, 0x2a8fbf, 1)
+        .setDepth(99999)
+        .setRotation(angle + Math.PI / 2);
+      this.tweens.add({
+        targets: shard,
+        x: endX,
+        y: endY,
+        alpha: 0,
+        duration: 560,
+        ease: 'Cubic.easeOut',
+        onComplete: () => shard.destroy(),
+      });
+    }
+  }
+
+  private playElementalImpact(target: Unit, element: Element): void {
+    if (!target.sprite) return;
+    const color = CombatScene.ELEMENT_COLOR[element] ?? 0xffffff;
+    const x = target.sprite.x;
+    const y = target.sprite.y;
+    const ring = this.add.circle(x, y, 16, color, 0).setStrokeStyle(3, color, 1).setDepth(99999);
+    this.tweens.add({
+      targets: ring,
+      scale: 3,
+      alpha: 0,
+      duration: 360,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    if (element === 'surge') {
+      // Quick second pulse for an "arc" feel.
+      const ring2 = this.add.circle(x, y, 12, color, 0).setStrokeStyle(2, color, 1).setDepth(99999);
+      this.tweens.add({
+        targets: ring2,
+        scale: 2.4,
+        alpha: 0,
+        duration: 220,
+        delay: 120,
+        ease: 'Cubic.easeOut',
+        onComplete: () => ring2.destroy(),
+      });
+      return;
+    }
+
+    if (element === 'thermal') {
+      // Ember sparks flying outward.
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + Math.random() * 0.4;
+        const dist = 40 + Math.random() * 20;
+        const spark = this.add.circle(x, y, 3, 0xffb055, 1).setDepth(99999);
+        this.tweens.add({
+          targets: spark,
+          x: x + Math.cos(angle) * dist,
+          y: y + Math.sin(angle) * dist,
+          alpha: 0,
+          duration: 420,
+          ease: 'Cubic.easeOut',
+          onComplete: () => spark.destroy(),
+        });
+      }
+      return;
+    }
+
+    if (element === 'coolant') {
+      // Radiating icicle shards + brief frost tint on target.
+      for (let i = 0; i < 7; i++) {
+        const angle = (i / 7) * Math.PI * 2;
+        const dist = 34 + Math.random() * 10;
+        const endX = x + Math.cos(angle) * dist;
+        const endY = y + Math.sin(angle) * dist;
+        const shard = this.add
+          .triangle(x, y, 0, -6, 3, 6, -3, 6, 0xb9ecff)
+          .setStrokeStyle(1, 0x2a8fbf, 1)
+          .setDepth(99999)
+          .setRotation(angle + Math.PI / 2);
+        this.tweens.add({
+          targets: shard,
+          x: endX,
+          y: endY,
+          alpha: 0,
+          duration: 460,
+          ease: 'Cubic.easeOut',
+          onComplete: () => shard.destroy(),
+        });
+      }
+      // Frost tint kicks in AFTER applyDamage's red flash clears (~140ms).
+      this.time.delayedCall(160, () => {
+        if (!target.sprite || target.ko) return;
+        target.sprite.setTint(0x8accff);
+        this.time.delayedCall(300, () => {
+          if (target.sprite) target.sprite.clearTint();
+        });
+      });
+    }
   }
 
   private playAttackTween(u: Unit, target: Unit): void {
@@ -2255,6 +3046,180 @@ export class CombatScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Boss signature AoE attack: walk to the center party member, play the
+   * dedicated elemental animation, on impact damage EVERY living party member
+   * (escort exempt), show elemental impact on each, then walk back.
+   */
+  /**
+   * Returns the living party member with the median posY — the visual
+   * "middle" of the party column. Used for ranged/AoE attack focal point so
+   * composition feels centered rather than biased to a front- or back-line.
+   * Returns null if no party members are alive.
+   */
+  private getCenterPartyMember(): Unit | null {
+    const alive = this.units.filter((u) => u.side === 'party' && !u.ko);
+    if (alive.length === 0) return null;
+    const sorted = [...alive].sort((a, b) => a.posY - b.posY);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  private playSignatureAoE(enemy: Unit, sig: NonNullable<EnemyDef['signatureAoE']>): void {
+    const partyTargets = this.units.filter((u) => u.side === 'party' && !u.ko);
+    if (partyTargets.length === 0) {
+      this.waitMode = false;
+      this.checkEndConditions();
+      return;
+    }
+    // Walk to the front of the MIDDLE party member (median Y among living).
+    const center = this.getCenterPartyMember() ?? partyTargets[0];
+
+    const onImpact = () => {
+      if (enemy.missing) {
+        enemy.missing = false;
+        this.updateStatusIcon(enemy);
+        this.checkSmokeExpiry();
+        spawnFloatNumber(this, enemy, 'MISS', '#aaaaaa');
+        this.showMessage(`${enemy.name} is blinded by smoke!`);
+        return;
+      }
+      playSfx(this, 'sfx-wreckling-slam', 1);
+      // Ground shake — feel the impact.
+      this.cameras.main.shake(380, 0.006);
+      // Big centered shockwave burst at the wreckling's feet.
+      this.playSignatureSlamBurst(enemy, sig.element);
+      this.showMessage(`${enemy.name} COOLANT SLAM — cryogenic burst hits the party!`);
+      for (const p of partyTargets) {
+        if (p.ko) continue;
+        const damage = Math.max(1, calculateDamage(enemy, p, sig.power, sig.element));
+        this.playElementalImpact(p, sig.element);
+        this.applyDamage(p, damage, false, sig.element);
+      }
+    };
+
+    const finalize = () => {
+      enemy.atb = 0;
+      this.waitMode = false;
+      this.checkEndConditions();
+    };
+
+    if (this.anims.exists(sig.animKey)) {
+      // Impact delay tuned to land on the kneel/slam frame of the 9-frame
+      // PixelLab anim (frame 7 at 8fps ≈ 875ms); 750ms fires just before it
+      // settles so shockwave + shake + SFX sync with the visible slam.
+      this.playFullAttackSequence(enemy, center, sig.animKey, onImpact, finalize, 0, 750);
+    } else {
+      this.playAttackTween(enemy, center);
+      this.time.delayedCall(500, () => {
+        onImpact();
+        this.time.delayedCall(400, finalize);
+      });
+    }
+  }
+
+  // Pick Shockwave target via weighted random across three strategies:
+  //   highest-ATB (weight 3) — most "interrupt"-feeling
+  //   random      (weight 2) — keeps it from being fully predictable
+  //   last-damager (weight 1) — thematic retaliation; falls back to random if null
+  private pickShockwaveTarget(enemy: Unit, living: Unit[]): Unit {
+    if (living.length === 0) return living[0];
+    const weights = [3, 2, 1];
+    const total = weights.reduce((a, b) => a + b, 0);
+    let roll = Math.random() * total;
+    let choice: 'atb' | 'random' | 'lastdmg' = 'atb';
+    for (const [i, w] of weights.entries()) {
+      if (roll < w) {
+        choice = i === 0 ? 'atb' : i === 1 ? 'random' : 'lastdmg';
+        break;
+      }
+      roll -= w;
+    }
+    if (choice === 'lastdmg') {
+      const last = enemy.lastDamagerId
+        ? living.find((u) => u.id === enemy.lastDamagerId)
+        : undefined;
+      if (last) return last;
+      choice = 'random';
+    }
+    if (choice === 'atb') {
+      return living.reduce((acc, u) => (u.atb > acc.atb ? u : acc));
+    }
+    return living[Math.floor(Math.random() * living.length)];
+  }
+
+  private playShockwaveAttack(enemy: Unit, shock: NonNullable<EnemyDef['shockwave']>): void {
+    const party = this.units.filter((u) => u.side === 'party' && !u.ko);
+    if (party.length === 0) {
+      enemy.atb = 0;
+      this.waitMode = false;
+      this.checkEndConditions();
+      return;
+    }
+    const target = this.pickShockwaveTarget(enemy, party);
+
+    const onImpact = () => {
+      if (enemy.missing) {
+        enemy.missing = false;
+        this.updateStatusIcon(enemy);
+        this.checkSmokeExpiry();
+        spawnFloatNumber(this, enemy, 'MISS', '#aaaaaa');
+        this.showMessage(`${enemy.name} is blinded by smoke!`);
+        return;
+      }
+      playSfx(this, 'sfx-wreckling-attack', 1);
+      const damage = Math.max(1, calculateDamage(enemy, target, shock.power, shock.element));
+      this.playElementalImpact(target, shock.element);
+      this.applyDamage(target, damage, false, shock.element);
+      // ATB reset — the "interrupt" part of the move.
+      target.atb = 0;
+      this.updatePanelRow(target);
+      // Delay the INTERRUPT floaty by 450ms so it doesn't overlap the damage
+      // number (which spawns at the same spot and takes ~800ms to float+fade).
+      this.time.delayedCall(450, () => {
+        if (!target.ko) spawnFloatNumber(this, target, 'INTERRUPT!', '#88ccff');
+      });
+      this.showMessage(
+        `${enemy.name} SHOCKWAVE — ${target.name} takes ${damage} and loses their turn`,
+      );
+    };
+
+    const finalize = () => {
+      enemy.atb = 0;
+      this.waitMode = false;
+      this.checkEndConditions();
+    };
+
+    const hasAnim = this.anims.exists(shock.animKey);
+    // Blue-tinted projectile for Wreckling's shockwave (rather than surge yellow).
+    const SHOCKWAVE_BLUE = 0x5ac8ff;
+    if (hasAnim) {
+      this.playPartialAdvanceRangedAttack(
+        enemy,
+        target,
+        shock.animKey,
+        shock.element,
+        onImpact,
+        finalize,
+        shock.chestYOffset ?? 0,
+        15, // bolt fires on frame 15 of the 17-frame windup
+        SHOCKWAVE_BLUE,
+      );
+    } else {
+      // Fallback: no dedicated anim yet — walk a step, fire projectile, walk back.
+      this.playPartialAdvanceRangedAttack(
+        enemy,
+        target,
+        `${enemy.id}-attack-east`,
+        shock.element,
+        onImpact,
+        finalize,
+        shock.chestYOffset ?? 0,
+        undefined,
+        SHOCKWAVE_BLUE,
+      );
+    }
+  }
+
   private playFullAttackSequence(
     u: Unit,
     target: Unit,
@@ -2262,6 +3227,7 @@ export class CombatScene extends Phaser.Scene {
     onImpact?: () => void,
     onComplete?: () => void,
     attackRepeats: number = 0,
+    impactDelayMs: number = 300,
   ): void {
     if (!u.sprite) return;
     const sprite = u.sprite;
@@ -2269,10 +3235,14 @@ export class CombatScene extends Phaser.Scene {
     const targetHalfW = (target.sprite?.displayWidth ?? 100) * 0.5;
     const gap = 20;
 
-    // Position attacker just in front of the target on their own side
+    // Position attacker just in front of the target on their own side. Align
+    // the attacker's FEET with the target's feet (not their origins), so
+    // oversized targets like Wreckling don't leave attackers floating near
+    // their shoulders. Falls through to target.posY when feetOffsetY is unset.
     const facingDir = target.posX < u.posX ? -1 : 1;
     let forwardX = target.posX - facingDir * (attackerHalfW + targetHalfW + gap);
-    const forwardY = target.posY;
+    const targetFeetY = target.posY + (target.feetOffsetY ?? 0);
+    const forwardY = targetFeetY - (u.feetOffsetY ?? 0);
 
     // (Enemies attacking the escort walk directly to her — no clamp. Party
     // members in the visual path are dimmed during the walk, see below.)
@@ -2374,7 +3344,7 @@ export class CombatScene extends Phaser.Scene {
         sprite.setTexture(u.spriteKey);
         // Step 2: play attack animation, fire impact mid-anim
         sprite.play({ key: animKey, repeat: attackRepeats });
-        const impactDelay = 300;
+        const impactDelay = impactDelayMs;
         if (onImpact) this.time.delayedCall(impactDelay, onImpact);
         sprite.once('animationcomplete', () => {
           sprite.setTexture(u.spriteKey);
@@ -2493,22 +3463,6 @@ export class CombatScene extends Phaser.Scene {
     }
   }
 
-  private playHitShake(u: Unit): void {
-    if (!u.sprite) return;
-    const baseX = u.posX;
-    this.tweens.add({
-      targets: u.sprite,
-      x: { from: baseX + 5, to: baseX - 5 },
-      duration: 55,
-      yoyo: true,
-      repeat: 2,
-      ease: 'Sine.easeInOut',
-      onComplete: () => {
-        if (u.sprite) u.sprite.x = baseX;
-      },
-    });
-  }
-
   private resetSpriteForRevive(u: Unit): void {
     if (!u.sprite) return;
     this.tweens.killTweensOf(u.sprite);
@@ -2560,24 +3514,22 @@ export class CombatScene extends Phaser.Scene {
     const run = getRun();
     this.saveStateToRun();
 
-    this.sound.play('sfx-victory-jingle', { volume: 0.5 });
+    playSfx(this, 'sfx-victory-jingle', 0.5);
     this.showMessage('VICTORY');
 
     this.time.delayedCall(1200, () => {
-      const nextIndex = run.encounterIndex + 1;
-      if (nextIndex >= run.route.encounters.length) {
-        log('SCENE', 'run complete (victory), transitioning to RunComplete');
-        this.scene.start('RunComplete', { outcome: 'victory' });
-        return;
-      }
       const wasLastIndex = run.encounterIndex;
+      const nextIndex = run.encounterIndex + 1;
       run.encounterIndex = nextIndex;
-      if (run.route.restAfter.includes(wasLastIndex)) {
-        log('SCENE', 'transitioning to Rest', { nextEncounter: nextIndex });
+      // Rest happens BEFORE Journey narratively ("rest at this spot, then
+      // travel to the next"). Journey is always the final transition into the
+      // next Combat or RunComplete.
+      if (run.route.restAfter.includes(wasLastIndex) && nextIndex < run.route.encounters.length) {
+        log('SCENE', 'Combat → Rest', { nextEncounter: nextIndex });
         this.scene.start('Rest');
       } else {
-        log('SCENE', 'transitioning to next Combat', { nextEncounter: nextIndex });
-        this.scene.start('Combat');
+        log('SCENE', 'Combat → Journey', { destination: nextIndex });
+        this.scene.start('Journey');
       }
     });
   }
@@ -2587,7 +3539,7 @@ export class CombatScene extends Phaser.Scene {
     this.combatOver = true;
     this.waitMode = true;
     this.saveStateToRun();
-    this.sound.play('sfx-defeat-sting', { volume: 0.5 });
+    playSfx(this, 'sfx-defeat-sting', 0.5);
     this.time.delayedCall(1000, () => {
       this.scene.start('RunComplete', { outcome: 'defeat', reason });
     });
@@ -2599,7 +3551,7 @@ export class CombatScene extends Phaser.Scene {
 
   private handleEscapeKey(): void {
     if (this.combatOver) return;
-    this.sound.play('sfx-menu-cancel', { volume: 0.5 });
+    playSfx(this, 'sfx-menu-cancel', 0.5);
     if (this.pauseMenuOpen) {
       this.closePauseMenu();
       return;
@@ -2637,7 +3589,11 @@ export class CombatScene extends Phaser.Scene {
     this.pauseMenuOpen = true;
     this.savedWaitModeForPause = this.waitMode;
     this.waitMode = true;
+    this.buildPauseMenuMain();
+  }
 
+  private buildPauseMenuMain(): void {
+    this.pauseMenuContainer?.destroy();
     const { width, height } = this.scale;
     const container = this.add.container(0, 0).setDepth(200000);
     const bg = this.add
@@ -2646,7 +3602,7 @@ export class CombatScene extends Phaser.Scene {
       .setInteractive();
 
     const resumeBtn = this.add
-      .text(width / 2, height / 2 - 40, '[ RESUME ]', {
+      .text(width / 2, height / 2 - 70, '[ RESUME ]', {
         fontFamily: FONT,
         fontSize: '28px',
         color: '#8aff8a',
@@ -2657,8 +3613,20 @@ export class CombatScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     resumeBtn.on('pointerup', () => this.closePauseMenu());
 
+    const audioBtn = this.add
+      .text(width / 2, height / 2, '[ AUDIO SETTINGS ]', {
+        fontFamily: FONT,
+        fontSize: '22px',
+        color: '#8acfff',
+        backgroundColor: '#2a3440',
+        padding: { x: 20, y: 8 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    audioBtn.on('pointerup', () => this.buildPauseMenuAudio());
+
     const quitBtn = this.add
-      .text(width / 2, height / 2 + 40, '[ ABANDON RUN ]', {
+      .text(width / 2, height / 2 + 70, '[ ABANDON RUN ]', {
         fontFamily: FONT,
         fontSize: '22px',
         color: '#ff8a8a',
@@ -2672,7 +3640,37 @@ export class CombatScene extends Phaser.Scene {
       this.abortRun();
     });
 
-    container.add([bg, resumeBtn, quitBtn]);
+    container.add([bg, resumeBtn, audioBtn, quitBtn]);
+    this.pauseMenuContainer = container;
+  }
+
+  private buildPauseMenuAudio(): void {
+    this.pauseMenuContainer?.destroy();
+    const { width, height } = this.scale;
+    const container = this.add.container(0, 0).setDepth(200000);
+    const bg = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x000000, 0.75)
+      .setOrigin(0.5)
+      .setInteractive();
+    container.add(bg);
+
+    // Shared master / music / sfx sliders (same panel as the non-combat pause
+    // menu — keeps audio UX consistent across the game).
+    buildAudioSettingsPanel(this, container, width / 2, height / 2 - 20);
+
+    const backBtn = this.add
+      .text(width / 2, height / 2 + 180, '[ BACK ]', {
+        fontFamily: FONT,
+        fontSize: '22px',
+        color: '#8aff8a',
+        backgroundColor: '#2a3a2a',
+        padding: { x: 20, y: 8 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    backBtn.on('pointerup', () => this.buildPauseMenuMain());
+
+    container.add(backBtn);
     this.pauseMenuContainer = container;
   }
 

@@ -4,7 +4,7 @@ Instructions and context for Claude Code sessions working on this project.
 
 ## Project
 
-**The Signal** — a post-AI-collapse party escort RPG for Vibe Jam 2026 (submission deadline **2026-05-01 13:37 UTC**).
+**Reach the Relay** — a post-AI-collapse party escort RPG for Vibe Jam 2026 (submission deadline **2026-05-01 13:37 UTC**).
 
 See `README.md` for the player-facing overview. Design docs live in `.claude/`:
 
@@ -29,8 +29,11 @@ src/
   main.ts                 Phaser Game config + scene list + debug badge mount
   scenes/
     BootScene.ts          preload all assets (sprites, audio, backgrounds)
-    LobbyScene.ts         title + party selection (pick 3 of 5)
+    TitleScene.ts         placeholder "press any key" title screen (logo art TBD)
+    LeaderSelectScene.ts  leader select — pick 1 of 5 classes as the playable avatar
+    LobbyScene.ts         walkable Greenhouse — recruit 2 companions via NPC dialogue OR via terminal shortcut; escort choice here
     RouteScene.ts         route select (3 difficulty tiers + test route)
+    JourneyScene.ts       between-encounter path animation
     CombatScene.ts        ATB combat, the bulk of the codebase
     RestScene.ts          between-encounter heal/revive
     RunCompleteScene.ts   victory/defeat screen + score calc
@@ -70,8 +73,9 @@ public/
 - Tracks preloaded in `BootScene` with key `music-<id>`
 - Each route has `musicKeys: string[]` (randomly picked per combat); boss encounters can set `bossMusicKey` on enemy def to override
 - Single "currently playing" track tracked via `this.registry.get('currentRouteMusic')`
-- Lobby + Route use `music-main-theme` (same across both)
-- **`RunCompleteScene` and `LobbyScene` stop ANY playing `music-*` sound on enter** via `stopAllMusic(this)` from `util/audio.ts` (defensive — registry tracking can desync if sounds were started without setting it). Lobby then starts main theme. Same defensive pattern lives in `CombatScene` when switching tracks.
+- `music-main-theme` (`main-theme.mp3`) plays on `TitleScene`
+- `music-lobby-theme` (`lobby-theme.mp3`) plays on `LeaderSelectScene` / Lobby / Route
+- **`RunCompleteScene` and `LeaderSelectScene` stop ANY playing `music-*` sound on enter** via `stopAllMusic(this)` from `util/audio.ts` (defensive — registry tracking can desync if sounds were started without setting it). Leader Select then starts main theme. Same defensive pattern lives in `CombatScene` when switching tracks.
 
 ### SFX
 
@@ -120,6 +124,7 @@ public/
 - **Path-overlap dim**: when an enemy walks through the party to attack the escort, ALL living party members are dimmed for the whole sequence (set to `DIMMED_OTHER_ALPHA = 0.3`). Implementation in `playFullAttackSequence`'s `pathOverlapTargets` block. The escort itself is NOT dimmed (filter is `p.side === 'party'`).
 - Enemy HP bars fade out 2.5s after last damage. `beginEnemyTurn` hides every **other** enemy's HP bar before the attacker starts, so a lingering bar from a recent hit isn't visible during a different enemy's attack.
 - The `L` key hotkey for copy-log is registered per-scene (currently only in CombatScene).
+- **`maxUsesPerRest` abilities (GUARD, TAUNT, SALVAGE)**: use counters live on `RunState.abilityUsesRemaining` (keyed as `${classId}:${abilityId}`), **not** on the combat scene. They persist across encounters and are only refilled by `refillAbilityUsesOnRest()` from `RestScene`. Don't accidentally reset them on combat scene create.
 
 ### Score
 

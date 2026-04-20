@@ -3,6 +3,8 @@ import { CLASSES } from '../data/classes';
 import { endRun, getRun, ESCORT_MAX_HP } from '../state/run';
 import { FONT } from '../util/ui';
 import { stopAllMusic } from '../util/audio';
+import { stopMusic } from '../util/music';
+import { installPauseMenuEsc } from '../util/pauseMenu';
 
 interface SceneData {
   outcome?: 'victory' | 'defeat';
@@ -26,12 +28,14 @@ export class RunCompleteScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const run = getRun();
 
+    // Clear the pool-based music state, then defensively stop any stray tracks.
+    stopMusic();
     stopAllMusic(this);
     this.registry.remove('currentRouteMusic');
 
     this.cameras.main.setBackgroundColor(this.outcome === 'victory' ? '#14281e' : '#281414');
 
-    const title = this.outcome === 'victory' ? 'THE SIGNAL IS REACHED' : 'THE ROUTE IS LOST';
+    const title = this.outcome === 'victory' ? 'THE RELAY IS REACHED' : 'THE ROUTE IS LOST';
     const titleColor = this.outcome === 'victory' ? '#8aff8a' : '#ff8a8a';
 
     this.add
@@ -98,10 +102,12 @@ export class RunCompleteScene extends Phaser.Scene {
 
     btn.on('pointerup', () => this.returnToLobby());
     this.input.keyboard?.once('keydown-SPACE', () => this.returnToLobby());
+
+    installPauseMenuEsc(this);
   }
 
   private returnToLobby(): void {
     endRun();
-    this.scene.start('Lobby');
+    this.scene.start('LeaderSelect');
   }
 }

@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
 import { CLASSES } from '../data/classes';
-import { getRun, ESCORT_MAX_HP } from '../state/run';
+import { getRun, ESCORT_MAX_HP, refillAbilityUsesOnRest } from '../state/run';
 import { FONT } from '../util/ui';
+import { installPauseMenuEsc } from '../util/pauseMenu';
 
 const HEAL_HP_PCT = 0.3;
 const HEAL_MP_PCT = 0.2;
@@ -38,6 +39,8 @@ export class RestScene extends Phaser.Scene {
       ESCORT_MAX_HP,
       Math.round(run.escortHp + ESCORT_MAX_HP * HEAL_ESCORT_PCT),
     );
+    // D&D-style: limited abilities (GUARD, TAUNT, SALVAGE) refill on rest.
+    refillAbilityUsesOnRest();
 
     this.add
       .text(width / 2, 80, 'REST STOP', {
@@ -87,7 +90,11 @@ export class RestScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
-    btn.on('pointerup', () => this.scene.start('Combat'));
-    this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('Combat'));
+    // Rest continues into Journey (marker animates from just-cleared encounter
+    // to the next one) before landing in Combat.
+    btn.on('pointerup', () => this.scene.start('Journey'));
+    this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('Journey'));
+
+    installPauseMenuEsc(this);
   }
 }

@@ -52,5 +52,5 @@ export type Inventory = Record<string, number>;
 export const STARTING_INVENTORY: Record<string, Inventory> = {
   'long-highway': { stimpak: 3, powercell: 2, adrenaline: 1, smokegrenade: 1 },
   'transit-line': { stimpak: 2, powercell: 1, adrenaline: 1, smokegrenade: 0 },
-  'direct-line': { stimpak: 1, powercell: 0, adrenaline: 0, smokegrenade: 0 },
+  'direct-line': { stimpak: 1, powercell: 1, adrenaline: 0, smokegrenade: 0 },
 };

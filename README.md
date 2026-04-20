@@ -1,8 +1,8 @@
-# The Signal
+# Reach the Relay
 
 A post-AI-collapse party escort RPG built for **Vibe Jam 2026**. SNES FF6 / Dragon Quest III visuals, Phaser 4 + TypeScript.
 
-> Unified super-AI brought civilization down decades ago. From the mall-atrium garden of **Greenhouse** you escort Dr. Vey to **The Signal**, a hilltop radio relay still broadcasting a reconnection beacon for scattered humans. The Censor hunts the airwaves — so sensitive intel travels by courier.
+> Unified super-AI brought civilization down decades ago. From the mall-atrium garden of **Greenhouse** you escort Dr. Vey to **The Relay**, a hilltop radio tower still broadcasting a reconnection beacon for scattered humans. The Censor hunts the airwaves — so sensitive intel travels by courier.
 
 ## Running it
 
@@ -17,21 +17,27 @@ Copy `.env.example` to `.env.local` if you want to override defaults (e.g. toggl
 
 ## Gameplay
 
-- **Lobby** — pick **3 of 5** adventurers (Vanguard, Netrunner, Medic, Scavenger, Cybermonk)
-- **Route select** — pick one of 3 routes: `easy` (5 encounters, 2 rest stops), `medium` (3/1), `hard` (2/0, punishing)
-- **Combat** — SNES-style ATB (Active Time Battle). Party on the right, enemies on the left, escort in the back row. Gauges fill over time; when a party member's gauge is full, combat pauses and the action menu appears
-- **Rest** — heal/recover between encounters at rest-after beats
-- **Run Complete** — victory/defeat screen with score
+- **Title** — "Press any key" attract screen (placeholder logo; final art TBD).
+- **Lobby** — pick your **leader** (1 of 5 — Vanguard, Netrunner, Medic, Scavenger, Cybermonk). The leader is your playable character in the Greenhouse and across the overworld, and is always part of the combat party.
+- **Greenhouse (LobbyScene)** — walkable top-down Greenhouse commune. Build your party of 3 one of two ways:
+  - **Talk to NPCs** — the other 4 adventurer classes are scattered around. Walk up + interact to recruit 2 companions through dialogue. Talk to Dr. Vey or Mira to choose your escort.
+  - **Or use the terminal directly** — skip the wandering and pick companions + escort from a menu.
+- **Route select** — pick one of 3 routes: `easy` (5–6 encounters, 2 rest stops), `medium` (3–4 / 1), `hard` (2 or 3 / 0 or 1, brutal). Encounter count + structure is randomized per run for replayability.
+- **Combat** — SNES-style ATB (Active Time Battle). Party on the right, enemies on the left, escort in the back row. Gauges fill over time; when a party member's gauge is full, combat pauses and the action menu appears.
+- **Rest** — heal/recover between encounters at rest-after beats.
+- **Run Complete** — victory/defeat screen with score.
 
 Abilities per class (renamed from classic fantasy for the sci-fi setting):
 
 | Class | Primary roles | Key abilities |
 |-------|---------------|---------------|
-| Vanguard | Frontline striker + tank | Basic attack, GUARD |
-| Netrunner | Magic DPS + status | OVERLOAD (surge), FROSTLOCK (coolant + slow), SURGE, STANDBY (sleep) |
+| Vanguard | Frontline striker + tank | Basic attack, GUARD*, TAUNT* |
+| Netrunner | Magic DPS | OVERLOAD (thermal), FROSTLOCK (coolant + slow), SURGE |
 | Medic | Support + healing | PATCH (heal), PULSE (anti-robotic), STIM (ATB boost), SHIELD (damage halver) |
-| Scavenger | Physical crit + utility | Basic attack, SALVAGE (50% crit), items |
-| Cybermonk | Physical multi-hit | Basic attack, FLURRY (3 hits) |
+| Scavenger | Physical crit + utility | Basic attack, SALVAGE* (50% crit chance + 25% item-drop chance) |
+| Cybermonk | Physical multi-hit | Basic attack, FOCUS (self-heal), FLURRY (3 hits) |
+
+\* **Rest-limited abilities** (D&D-style): GUARD, TAUNT, and SALVAGE have per-rest use caps (GUARD 2, TAUNT 2, SALVAGE 3). Uses carry across combat encounters and only refill at a Rest scene — so you have to choose which encounters to burn them on.
 
 Enemies are tagged `robotic` or `hybrid` — Medic's **PULSE** is a 1.5× critical vs robotic and 0.5× weak vs hybrid. Elemental vulnerabilities (thermal 🔥, coolant ❄, surge ⚡) show as glyphs on damage numbers.
 
@@ -60,7 +66,7 @@ This rewards **HP efficiency** — finishing with everyone at full HP is the cei
 - **Phaser 4** with `pixelArt: true` for crisp nearest-neighbor scaling
 - **TypeScript strict mode**
 - **Vite** for dev server + build
-- Scenes: `BootScene` → `LobbyScene` → `RouteScene` → `CombatScene` ↔ `RestScene` → `RunCompleteScene`
+- Scenes: `BootScene` → `TitleScene` → `LeaderSelectScene` → `LobbyScene` → `RouteScene` → `JourneyScene` ↔ `CombatScene` ↔ `RestScene` → `RunCompleteScene`
 
 ## Debug
 

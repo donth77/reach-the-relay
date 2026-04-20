@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>The Signal</title>
+    <title>Reach the Relay</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,17 +15,20 @@
       body {
         margin: 0;
         padding: 0;
-        height: 100%;
         background: #0a0a0a;
         overflow: hidden;
         font-family: system-ui, sans-serif;
       }
+      /* #game must fill the viewport so Phaser's `autoCenter: CENTER_BOTH`
+         can compute correct margins off a known parent size. No CSS-level
+         flex/grid centering — it fights Phaser's margin-based centering and
+         produces asymmetric offsets. */
+      html,
+      body,
       #game {
         width: 100vw;
         height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        height: 100dvh;
       }
       canvas {
         display: block;

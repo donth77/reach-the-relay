@@ -3,7 +3,7 @@ import type { ClassDef } from '../data/classes';
 import type { EnemyDef } from '../data/enemies';
 
 export const ATB_MAX = 100;
-export const ATB_RATE = 7;
+export const ATB_RATE = 9;
 
 export const PANEL_HEIGHT = 200;
 export const PANEL_MARGIN = 10;
@@ -41,14 +41,26 @@ export interface Unit {
   atb: number;
   ko: boolean;
   guarding: boolean;
-  sleeping: boolean;
   tauntedBy: string | null;
   atbModifier: number;
   atbModifierTurnsLeft: number;
   shielded: boolean;
   missing: boolean;
+  // Alternating-signature toggle: true when the enemy's next action should be
+  // its boss AoE rather than the normal attack. Currently only used by Wreckling.
+  signatureNext?: boolean;
+  // Counts enemy turns taken; used by Wreckling to cycle through its 3-move
+  // rotation (normal → Shockwave → coolant AoE).
+  turnCount?: number;
+  // Instance id of the last party member that dealt damage to this enemy —
+  // used by Wreckling's Shockwave targeting. Reset per combat.
+  lastDamagerId?: string;
   posX: number;
   posY: number;
+  // Display-px distance from posY (sprite origin) down to the character's feet.
+  // Populated at sprite creation so attack walk-ups can align attacker's feet
+  // with target's feet — important for oversized sprites (e.g. Wreckling).
+  feetOffsetY?: number;
   sprite?: Phaser.GameObjects.Sprite;
   idleTween?: Phaser.Tweens.Tween;
   shadow?: Phaser.GameObjects.Ellipse;
@@ -57,6 +69,8 @@ export interface Unit {
   enemyHpBar?: Phaser.GameObjects.Rectangle;
   vulnerabilityIcon?: Phaser.GameObjects.Text;
   statusIcon?: Phaser.GameObjects.Text;
+  // Subtle ▼ marker shown above a party member's head while it's their turn.
+  activeTurnMarker?: Phaser.GameObjects.Text;
   panelRow?: {
     container: Phaser.GameObjects.Container;
     nameText: Phaser.GameObjects.Text;

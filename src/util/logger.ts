@@ -26,7 +26,7 @@ export function log(tag: string, msg: string, data?: Record<string, unknown>): v
   const line = `[${timestamp()}] [${tag}] ${msg}${dataStr}`;
   buffer.push(line);
   if (buffer.length > BUFFER_SIZE) buffer.shift();
-   
+
   console.log(line);
 }
 
@@ -60,13 +60,15 @@ export function mountDebugBadge(): void {
   if (!DEBUG_ENABLED) return;
   if (typeof document === 'undefined') return;
   if (document.getElementById('debug-badge')) return;
-  const el = document.createElement('div');
+  const el = document.createElement('button');
   el.id = 'debug-badge';
+  el.type = 'button';
   el.textContent = 'DEBUG · [L] copy log';
+  el.title = 'Click to copy the last ~500 log lines to clipboard';
   Object.assign(el.style, {
     position: 'fixed',
     top: '6px',
-    left: '6px',
+    right: '6px',
     zIndex: '9999',
     padding: '3px 8px',
     background: 'rgba(0,0,0,0.75)',
@@ -76,8 +78,16 @@ export function mountDebugBadge(): void {
     fontWeight: 'bold',
     border: '1px solid #ff6666',
     borderRadius: '3px',
-    pointerEvents: 'none',
+    cursor: 'pointer',
     letterSpacing: '0.5px',
+  });
+  el.addEventListener('click', async () => {
+    const ok = await copyLogToClipboard();
+    const originalText = el.textContent;
+    el.textContent = ok ? 'DEBUG · copied ✓' : 'DEBUG · (empty)';
+    setTimeout(() => {
+      el.textContent = originalText;
+    }, 1200);
   });
   document.body.appendChild(el);
 }

@@ -12,6 +12,13 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    // Kick off the Silkscreen webfont download in parallel with Phaser's
+    // asset preload. Doesn't block — just ensures the font is further along
+    // (or done) by the time TitleScene renders its menu text.
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    fonts?.load?.('400 44px "Silkscreen"');
+    fonts?.load?.('700 44px "Silkscreen"');
+
     for (const key of PARTY_KEYS) {
       for (const dir of DIRECTIONS) {
         this.load.image(`${key}-${dir}`, `assets/sprites/party/${key}/${dir}.png`);
@@ -49,7 +56,8 @@ export class BootScene extends Phaser.Scene {
           `assets/sprites/party/${key}/anim/attack-west/frame_${padded}.png`,
         );
       }
-      const walkFrames = key === 'cybermonk' || key === 'scavenger' ? 6 : 4;
+      const walkFrames =
+        key === 'cybermonk' || key === 'scavenger' || key === 'medic' ? 6 : 4;
       for (let i = 0; i < walkFrames; i++) {
         const padded = i.toString().padStart(3, '0');
         this.load.image(
@@ -57,8 +65,15 @@ export class BootScene extends Phaser.Scene {
           `assets/sprites/party/${key}/anim/walk-west/frame_${padded}.png`,
         );
       }
-      // Per-character death frame counts (most are 7; scavenger + cybermonk custom are 4)
-      const deathFrames = key === 'scavenger' || key === 'cybermonk' ? 4 : 7;
+      // Per-character death frame counts
+      const deathFrames =
+        key === 'scavenger' || key === 'cybermonk'
+          ? 4
+          : key === 'vanguard'
+            ? 11
+            : key === 'medic'
+              ? 9
+              : 7;
       for (let i = 0; i < deathFrames; i++) {
         const padded = i.toString().padStart(3, '0');
         this.load.image(
@@ -69,8 +84,8 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`${key}-downed`, `assets/sprites/party/${key}/downed.png`);
     }
 
-    // Medic cast_v2 animation (4 frames) — for PATCH / PULSE / STIM / SHIELD
-    for (let i = 0; i < 4; i++) {
+    // Medic cast animation (9 frames, PixelLab healing-magic custom) — PATCH / PULSE / STIM / SHIELD
+    for (let i = 0; i < 9; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
         `medic-cast-west-${padded}`,
@@ -88,8 +103,8 @@ export class BootScene extends Phaser.Scene {
     }
     this.load.image('drvey-downed', 'assets/sprites/npcs/drvey/downed.png');
 
-    // Wirehead (enemy) walk + attack + death animations (east direction) + downed sprite
-    for (let i = 0; i < 4; i++) {
+    // Wirehead (new 92×92 PixelLab sprite) — walk, attack, death, idle
+    for (let i = 0; i < 6; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
         `wirehead-walk-east-${padded}`,
@@ -149,6 +164,33 @@ export class BootScene extends Phaser.Scene {
       );
     }
     this.load.image('wreckling-downed', 'assets/sprites/enemies/wreckling/downed.png');
+
+    // Sentry thermal attack (elemental alternate) — 8 frames
+    for (let i = 0; i < 8; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `sentry-attack-thermal-east-${padded}`,
+        `assets/sprites/enemies/sentryturret/anim/attack-thermal-east/frame_${padded}.png`,
+      );
+    }
+
+    // Wreckling coolant attack (elemental alternate, AoE) — 9 frames, PixelLab V3
+    for (let i = 0; i < 9; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `wreckling-attack-coolant-east-${padded}`,
+        `assets/sprites/enemies/wreckling/anim/attack-coolant-east/frame_${padded}.png`,
+      );
+    }
+
+    // Wreckling Shockwave (damage + ATB reset, surge element) — 17 frames, PixelLab
+    for (let i = 0; i < 17; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `wreckling-attack-shockwave-east-${padded}`,
+        `assets/sprites/enemies/wreckling/anim/attack-shockwave-east/frame_${padded}.png`,
+      );
+    }
 
     // Sentry (enemy id 'sentry', dir 'sentryturret') — walk + attack + death (east) + downed
     for (let i = 0; i < 8; i++) {
@@ -230,6 +272,10 @@ export class BootScene extends Phaser.Scene {
       );
     }
 
+    this.load.image('title-bg-on', 'assets/title/bg-on.png');
+    this.load.image('title-bg-off', 'assets/title/bg-off.png');
+    this.load.image('title-logo', 'assets/logo/logo-surge.png');
+
     this.load.image('bg-overgrown-highway', 'assets/backgrounds/combat/overgrown_highway.webp');
     this.load.image(
       'bg-overgrown-highway-tunnel',
@@ -247,24 +293,16 @@ export class BootScene extends Phaser.Scene {
       'bg-dead-substation-transformer',
       'assets/backgrounds/combat/dead_substation_transformer.webp',
     );
+    this.load.image(
+      'bg-dead-substation-boss',
+      'assets/backgrounds/combat/dead_substation_boss.webp',
+    );
 
-    this.load.audio(
-      'music-route-overgrown-bridge',
-      'assets/audio/music/route-overgrown-bridge.mp3',
-    );
-    this.load.audio(
-      'music-route-overgrown-bridge-alt',
-      'assets/audio/music/route-overgrown-bridge-alt.mp3',
-    );
-    this.load.audio('music-route-hollow-atrium', 'assets/audio/music/route-hollow-atrium.mp3');
-    this.load.audio(
-      'music-route-hollow-atrium-alt',
-      'assets/audio/music/route-hollow-atrium-alt.mp3',
-    );
-    this.load.audio('music-route-substation', 'assets/audio/music/route-substation.mp3');
-    this.load.audio('music-route-substation-alt', 'assets/audio/music/route-substation-alt.mp3');
-    this.load.audio('music-route-substation-boss', 'assets/audio/music/route-substation-boss.mp3');
+    // Only Title (main-theme) and Lobby (lobby-theme) music loaded up-front.
+    // Route + journey music is deferred to `BackgroundLoadScene` so Title boots
+    // fast — see `src/scenes/BackgroundLoadScene.ts`.
     this.load.audio('music-main-theme', 'assets/audio/music/main-theme.mp3');
+    this.load.audio('music-lobby-theme', 'assets/audio/music/lobby-theme.mp3');
 
     this.load.audio('sfx-menu-confirm', 'assets/audio/sfx/menu-confirm.mp3');
     this.load.audio('sfx-menu-cancel', 'assets/audio/sfx/menu-cancel.mp3');
@@ -276,6 +314,13 @@ export class BootScene extends Phaser.Scene {
     this.load.audio('sfx-victory-jingle', 'assets/audio/sfx/victory-jingle.mp3');
     this.load.audio('sfx-defeat-sting', 'assets/audio/sfx/defeat-sting.mp3');
     this.load.audio('sfx-item-use', 'assets/audio/sfx/item-use.mp3');
+    this.load.audio('sfx-smoke-grenade', 'assets/audio/sfx/smoke-grenade.mp3');
+
+    // Smoke grenade VFX — 8-frame looping cloud, SpriteCook-generated
+    for (let i = 0; i < 8; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(`smoke-vfx-${padded}`, `assets/sprites/vfx/smoke/frame_${padded}.png`);
+    }
     this.load.audio('sfx-party-ko', 'assets/audio/sfx/party-ko.mp3');
     this.load.audio('sfx-atb-ready', 'assets/audio/sfx/atb-ready.mp3');
     this.load.audio('sfx-critical-hit', 'assets/audio/sfx/critical-hit.mp3');
@@ -288,7 +333,6 @@ export class BootScene extends Phaser.Scene {
     this.load.audio('sfx-netrunner-overload', 'assets/audio/sfx/netrunner/overload.mp3');
     this.load.audio('sfx-netrunner-frostlock', 'assets/audio/sfx/netrunner/frostlock.mp3');
     this.load.audio('sfx-netrunner-surge', 'assets/audio/sfx/netrunner/surge.mp3');
-    this.load.audio('sfx-netrunner-standby', 'assets/audio/sfx/netrunner/standby.mp3');
 
     // Medic per-ability SFX
     this.load.audio('sfx-medic-patch', 'assets/audio/sfx/medic/patch.mp3');
@@ -305,6 +349,7 @@ export class BootScene extends Phaser.Scene {
     this.load.audio('sfx-spider-attack', 'assets/audio/sfx/enemy/spider-attack.mp3');
     this.load.audio('sfx-wirehead-attack', 'assets/audio/sfx/enemy/wirehead-attack.mp3');
     this.load.audio('sfx-wreckling-attack', 'assets/audio/sfx/enemy/wreckling-attack.mp3');
+    this.load.audio('sfx-wreckling-slam', 'assets/audio/sfx/enemy/wreckling-slam.mp3');
     this.load.audio('sfx-scoutdrone-attack', 'assets/audio/sfx/enemy/scoutdrone-attack.mp3');
     this.load.audio('sfx-naniteswarm-attack', 'assets/audio/sfx/enemy/naniteswarm-attack.mp3');
 
@@ -320,6 +365,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.scene.start('Lobby');
+    // Kick off background loading of route/journey music (~35 MB) in parallel
+    // — these aren't needed until RouteScene or later, so we don't block Title
+    // on them.
+    this.scene.launch('BackgroundLoad');
+    this.scene.start('Title');
   }
 }

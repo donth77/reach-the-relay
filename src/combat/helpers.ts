@@ -15,8 +15,12 @@ export function calculateDamage(
   const base = Math.max(1, attacker.attack * power - target.defense);
   const variance = Math.floor(Math.random() * 5) - 2;
   let damage = Math.max(1, Math.round(base + variance));
-  if (element && target.enemyDef?.vulnerability === element) {
-    damage = Math.round(damage * 1.5);
+  if (element && element !== 'none') {
+    if (target.enemyDef?.vulnerability === element) {
+      damage = Math.round(damage * 1.5);
+    } else if (target.enemyDef?.resistances?.includes(element)) {
+      damage = Math.max(1, Math.round(damage * 0.5));
+    }
   }
   return damage;
 }
