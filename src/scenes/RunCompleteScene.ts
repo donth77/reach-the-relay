@@ -5,6 +5,7 @@ import { FONT } from '../util/ui';
 import { stopAllMusic } from '../util/audio';
 import { stopMusic } from '../util/music';
 import { installPauseMenuEsc } from '../util/pauseMenu';
+import { resetLobbyForNextRun } from '../state/lobby';
 
 interface SceneData {
   outcome?: 'victory' | 'defeat';
@@ -108,6 +109,28 @@ export class RunCompleteScene extends Phaser.Scene {
 
   private returnToLobby(): void {
     endRun();
-    this.scene.start('LeaderSelect');
+    // Keep the chosen leader across runs — player restarts from Title
+    // to re-pick. Recruits and last position reset via
+    // resetLobbyForNextRun so the next run starts with a fresh crew
+    // to assemble.
+    resetLobbyForNextRun();
+    // Force-stop every scene that could still be alive from the run
+    // just finished. scene.start('Lobby') would normally stop the
+    // calling RunComplete scene, but leaked peers (PartySelectTerminal
+    // paused, Journey still drawing, etc.) can keep rendering over
+    // the new Lobby. Explicit manager.stop calls kill the leftovers
+    // before we start Lobby fresh.
+    const sm = this.scene.manager;
+    for (const key of [
+      'PartySelectTerminal',
+      'Combat',
+      'Route',
+      'Journey',
+      'Rest',
+      'Lobby',
+    ]) {
+      if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
+    }
+    this.scene.start('Lobby');
   }
 }

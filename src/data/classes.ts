@@ -33,7 +33,12 @@ export interface AbilityDef {
 
 export interface ClassDef {
   id: string;
+  /** Role name (e.g. "Vanguard"). Shown as a subtitle below the personal name. */
   name: string;
+  /** Personal name of the individual filling this role (e.g. "Kade").
+   *  Displayed as the primary identifier in the lobby, party select, and
+   *  dialogue UIs; `name` is treated as their secondary/role label. */
+  personName: string;
   spriteKey: string;
   hp: number;
   attack: number;
@@ -46,12 +51,19 @@ export interface ClassDef {
   // canvas size (e.g. Vanguard at 96×96 needs a smaller scale to stay
   // visually consistent with 68-canvas classmates).
   scale?: number;
+  // Display-px downward shift applied to the sprite when it swaps to the
+  // `<id>-downed` texture. Compensates for downed poses whose opaque bottom
+  // sits higher than the standing sprite's feet — without this, the KO'd
+  // body appears to hover above the ground line. Measured per-class from
+  // the opaque bbox of the downed PNG.
+  downedYOffset?: number;
 }
 
 export const CLASSES: Record<string, ClassDef> = {
   vanguard: {
     id: 'vanguard',
     name: 'Vanguard',
+    personName: 'Kade',
     spriteKey: 'vanguard-west',
     // 96×96 canvas — use default party scale (2.5) to match other classes'
     // display height (~120px), since the vanguard character fills less of
@@ -77,7 +89,7 @@ export const CLASSES: Record<string, ClassDef> = {
         id: 'guard',
         label: 'GUARD',
         description:
-          'Intercept every enemy attack until your next turn — damage redirected to you and halved. Wreckling ignores this. Max 2 per rest.',
+          'Intercept every enemy attack until your next turn — damage redirected to you and halved. Wreckwarden ignores this. Max 2 per rest.',
         mpCost: 0,
         target: 'self',
         effect: 'guard',
@@ -108,7 +120,9 @@ export const CLASSES: Record<string, ClassDef> = {
   netrunner: {
     id: 'netrunner',
     name: 'Netrunner',
+    personName: 'Echo',
     spriteKey: 'netrunner-west',
+    downedYOffset: 25,
     hp: 35,
     attack: 14,
     defense: 3,
@@ -171,10 +185,12 @@ export const CLASSES: Record<string, ClassDef> = {
   medic: {
     id: 'medic',
     name: 'Medic',
+    personName: 'Nico',
     spriteKey: 'medic-west',
     // 104×104 canvas — 2.3 is a compromise: standing height ≈ 117px (matches
     // others ~120) while keeping the lying-down footprint in check.
     scale: 2.3,
+    downedYOffset: 14,
     hp: 55,
     attack: 8,
     defense: 5,
@@ -224,7 +240,7 @@ export const CLASSES: Record<string, ClassDef> = {
         id: 'shield',
         label: 'SHIELD',
         description:
-          'Halve damage taken by one ally until their next turn. Works even against Wreckling.',
+          'Halve damage taken by one ally until their next turn. Works even against Wreckwarden.',
         mpCost: 5,
         target: 'ally-or-escort',
         effect: 'shield-buff',
@@ -243,6 +259,7 @@ export const CLASSES: Record<string, ClassDef> = {
   scavenger: {
     id: 'scavenger',
     name: 'Scavenger',
+    personName: 'Raven',
     spriteKey: 'scavenger-west',
     // Slightly smaller scale — her lying-down pose is the widest in the party,
     // 2.4 keeps the downed footprint in harmony with others.
@@ -288,8 +305,14 @@ export const CLASSES: Record<string, ClassDef> = {
   cybermonk: {
     id: 'cybermonk',
     name: 'Cybermonk',
+    personName: 'Jun',
     spriteKey: 'cybermonk-west',
-    hp: 65,
+    // 68×68 canvas — explicit 2.4 (not the default 2.5) to keep his
+    // downed-pose footprint in line with the rest of the party.
+    scale: 2.4,
+    downedYOffset: 17,
+    // hp: 65,
+    hp: 1,
     attack: 13,
     defense: 6,
     speed: 5,
@@ -319,12 +342,13 @@ export const CLASSES: Record<string, ClassDef> = {
         id: 'flurry',
         label: 'FLURRY',
         description:
-          'Three rapid strikes on one enemy. Each hit deals reduced damage but can crit.',
+          'Three rapid strikes on one enemy. Each hit deals reduced damage but can crit. Max 5 per rest.',
         mpCost: 0,
         target: 'enemy',
         effect: 'flurry',
         power: 0.6,
         sfxKey: 'sfx-cybermonk-flurry',
+        maxUsesPerRest: 5,
       },
       {
         id: 'item',

@@ -16,6 +16,9 @@ export interface PauseMenuOptions {
   onAbandon?: () => void;
   /** Scene key to load when "Return to title" is chosen. Defaults to 'Title'. */
   titleSceneKey?: string;
+  /** Returning true from this callback blocks ESC from opening the
+   *  pause menu — e.g. when an NPC dialogue modal owns its own ESC. */
+  shouldBlockEsc?: () => boolean;
 }
 
 type RowId = 'resume' | 'settings' | 'abandon' | 'quit' | 'back';
@@ -47,6 +50,24 @@ export function isPauseMenuOpen(): boolean {
   return current !== null;
 }
 
+/**
+ * Register a scene keydown handler that automatically no-ops while the
+ * pause menu is open. Use this anywhere a confirm key (ENTER/SPACE/E) would
+ * otherwise also trigger a scene transition — without the guard, the key
+ * fires BOTH the scene handler AND the pause menu's row activator, which
+ * makes "Return to title" (and other menu actions) unreliable.
+ */
+export function onSceneKeyWhenUnpaused(
+  scene: Phaser.Scene,
+  key: string,
+  handler: () => void,
+): void {
+  scene.input.keyboard?.on(`keydown-${key}`, () => {
+    if (isPauseMenuOpen()) return;
+    handler();
+  });
+}
+
 export function closePauseMenu(): void {
   if (!current) return;
   current.cleanupKeyHandlers();
@@ -67,7 +88,7 @@ export function openPauseMenu(scene: Phaser.Scene, opts: PauseMenuOptions = {}):
 export function installPauseMenuEsc(scene: Phaser.Scene, opts: PauseMenuOptions = {}): void {
   scene.input.keyboard?.on('keydown-ESC', () => {
     if (isPauseMenuOpen()) closePauseMenu();
-    else openPauseMenu(scene, opts);
+    else if (!opts.shouldBlockEsc?.()) openPauseMenu(scene, opts);
   });
 }
 
@@ -80,10 +101,14 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
   }
 
   const { width, height } = scene.scale;
-  const container = scene.add.container(0, 0).setDepth(100000);
+  // setScrollFactor(0) pins the menu to the camera — without it, scenes that
+  // scroll (like the walkable lobby) render the menu at world coords and it
+  // appears off-screen.
+  const container = scene.add.container(0, 0).setDepth(100000).setScrollFactor(0);
 
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, 0x000000, 0.78)
+    .setScrollFactor(0)
     .setInteractive();
   container.add(backdrop);
 
@@ -161,10 +186,11 @@ function buildSettingsSubmenu(scene: Phaser.Scene, opts: PauseMenuOptions): void
   }
 
   const { width, height } = scene.scale;
-  const container = scene.add.container(0, 0).setDepth(100000);
+  const container = scene.add.container(0, 0).setDepth(100000).setScrollFactor(0);
 
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, 0x000000, 0.78)
+    .setScrollFactor(0)
     .setInteractive();
   container.add(backdrop);
 
@@ -217,7 +243,8 @@ function createRows(
         stroke: '#000000',
         strokeThickness: 4,
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setScrollFactor(0);
     const chevron = scene.add
       .text(width / 2 - text.width / 2 - 18, y, '\u25B6', {
         fontFamily: FONT,
@@ -227,7 +254,8 @@ function createRows(
         strokeThickness: 4,
       })
       .setOrigin(1, 0.5)
-      .setVisible(false);
+      .setVisible(false)
+      .setScrollFactor(0);
 
     const row: Row = { id: spec.id, text, chevron, activate: spec.activate };
 

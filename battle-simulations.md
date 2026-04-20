@@ -1,4 +1,4 @@
-# Wreckling Battle Simulations
+# Wreckwarden Battle Simulations
 
 _Generated 2026-04-19T13:27:17.507Z_  ·  1000 trials per scenario
 
@@ -18,13 +18,13 @@ Band legend: ⭐ ideal (50-60%) · 🟡 close (within 5pp) · 🟢 easy (>65%) �
 - **Items**: STIMPAK on escort when critical (≤30% HP); no smoke-grenade simulated
 - **Evasion**: 30% dodge on basic physical attacks vs evasive enemies (not relevant for boss)
 
-## Current Wreckling stats
+## Current Wreckwarden stats
 
 HP **85** · Attack **20** · Defense **9** · Speed **6**
 
 Rotation: normal single-target (target-escort) → SHOCKWAVE (damage + ATB reset, weighted-random target) → signature coolant AoE → repeat. Ignores GUARD. Resists thermal + coolant; no vulnerability.
 
-## All 10 party combos vs current Wreckling (fresh + degraded)
+## All 10 party combos vs current Wreckwarden (fresh + degraded)
 
 _Fresh = full HP/MP. Degraded = arriving from Direct Line's prior encounter: ~80% HP, ~70% MP for casters, one use of each limited ability already spent._
 
@@ -46,9 +46,9 @@ _Fresh = full HP/MP. Degraded = arriving from Direct Line's prior encounter: ~80
 - Best combo: **Net+Med+Cyb** (76.7%)
 - Worst combo: **Van+Med+Sca** (5.1%)
 
-## HP sweep on Wreckling — degraded-start party = Van+Net+Med
+## HP sweep on Wreckwarden — degraded-start party = Van+Net+Med
 
-| Wreckling HP | Fresh Win % | Degraded Win % | Avg escort HP (degraded) |
+| Wreckwarden HP | Fresh Win % | Degraded Win % | Avg escort HP (degraded) |
 |---:|---:|---:|---:|
 | 60 | 84.1% 🟢 easy | 79.0% 🟢 easy | 22.1/35 |
 | 70 | 79.4% 🟢 easy | 60.6% 🟡 close | 15.2/35 |
@@ -59,9 +59,9 @@ _Fresh = full HP/MP. Degraded = arriving from Direct Line's prior encounter: ~80
 | 110 | 16.9% 🔴 hard | 0.8% 🔴 hard | 2.4/35 |
 | 120 | 5.5% 🔴 hard | 0.0% 🔴 hard | 2.4/35 |
 
-## Attack sweep on Wreckling (party = Van+Net+Med, HP=85)
+## Attack sweep on Wreckwarden (party = Van+Net+Med, HP=85)
 
-| Wreckling Atk | Win % | Avg escort HP | Escort KO % |
+| Wreckwarden Atk | Win % | Avg escort HP | Escort KO % |
 |---:|---:|---:|---:|
 | 16 | 97.0% 🟢 easy | 25.2/35 | 3.0% |
 | 18 | 85.1% 🟢 easy | 21.6/35 | 14.6% |
@@ -69,9 +69,9 @@ _Fresh = full HP/MP. Degraded = arriving from Direct Line's prior encounter: ~80
 | 22 | 43.0% 🔴 hard | 15.2/35 | 31.2% |
 | 24 | 31.5% 🔴 hard | 14.0/35 | 31.8% |
 
-## Defense sweep on Wreckling (party = Van+Net+Med, HP=85)
+## Defense sweep on Wreckwarden (party = Van+Net+Med, HP=85)
 
-| Wreckling Def | Win % | Avg turns | Escort KO % |
+| Wreckwarden Def | Win % | Avg turns | Escort KO % |
 |---:|---:|---:|---:|
 | 6 | 85.7% 🟢 easy | 14.2 | 14.3% |
 | 8 | 76.6% 🟢 easy | 21.8 | 22.8% |

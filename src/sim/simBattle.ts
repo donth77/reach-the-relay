@@ -39,7 +39,7 @@ export interface SimUnit {
 
 export interface SimConfig {
   partyClassIds: string[]; // length 3
-  enemyId?: string; // default 'wreckling' — used when enemyIds not set
+  enemyId?: string; // default 'wreckwarden' — used when enemyIds not set
   enemyIds?: string[]; // multi-enemy encounters (e.g. ['wirehead', 'spider', 'sentry'])
   enemyOverrides?: Partial<Pick<EnemyDef, 'hp' | 'attack' | 'defense' | 'speed'>>;
   startingInventory?: Record<string, number>; // stimpak, powercell, adrenaline, smokegrenade
@@ -270,14 +270,14 @@ function pickPartyAction(
     if (koAlly) return { kind: 'item', itemId: 'adrenaline', target: koAlly };
   }
 
-  // 2. Smoke grenade before Wreckling's AoE turn — any party member can pop it
+  // 2. Smoke grenade before Wreckwarden's AoE turn — any party member can pop it
   if ((inventory.smokegrenade ?? 0) > 0) {
-    const wreckling = enemies.find((e) => e.enemyDef?.shockwave && e.enemyDef?.signatureAoE);
-    if (wreckling) {
-      const nextPhase = wreckling.turnCount % 3;
+    const wreckwarden = enemies.find((e) => e.enemyDef?.shockwave && e.enemyDef?.signatureAoE);
+    if (wreckwarden) {
+      const nextPhase = wreckwarden.turnCount % 3;
       // phase 2 → next turn is AoE; pop smoke to negate it
       if (nextPhase === 2) {
-        return { kind: 'item', itemId: 'smokegrenade', target: wreckling };
+        return { kind: 'item', itemId: 'smokegrenade', target: wreckwarden };
       }
     }
   }
@@ -301,7 +301,7 @@ function pickPartyAction(
   }
 
   // Smarter primary target selection:
-  //  1. Any enemy with target-escort behavior (Wirehead, Wreckling) — priority kill
+  //  1. Any enemy with target-escort behavior (Wirehead, Wreckwarden) — priority kill
   //  2. Lowest-HP enemy to reduce enemy count
   //  3. First enemy in array (fallback)
   const escortHunters = enemies.filter((e) => e.enemyDef?.behavior === 'target-escort');
@@ -581,7 +581,7 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
       return;
     }
   } else if (sig) {
-    // Simple alternation for AoE-only bosses (currently unused — wreckling has both)
+    // Simple alternation for AoE-only bosses (currently unused — wreckwarden has both)
     const phase = enemy.turnCount % 2;
     if (phase === 0) {
       for (const p of party) {
@@ -656,7 +656,7 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
   const rng: RNG = rngSeed !== undefined ? mulberry32(rngSeed) : Math.random;
 
   const party = buildParty(config.partyClassIds, config.startDegraded);
-  const enemyIds = config.enemyIds ?? [config.enemyId ?? 'wreckling'];
+  const enemyIds = config.enemyIds ?? [config.enemyId ?? 'wreckwarden'];
   const enemies: SimUnit[] = enemyIds.map((id, idx) => {
     const base = ENEMIES[id];
     const isLast = idx === enemyIds.length - 1;

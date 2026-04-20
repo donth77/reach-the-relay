@@ -3,12 +3,15 @@ import { BootScene } from './scenes/BootScene';
 import { BackgroundLoadScene } from './scenes/BackgroundLoadScene';
 import { TitleScene } from './scenes/TitleScene';
 import { LeaderSelectScene } from './scenes/LeaderSelectScene';
+import { LobbyScene } from './scenes/LobbyScene';
+import { PartySelectScene } from './scenes/PartySelectScene';
+import { PartySelectTerminalScene } from './scenes/PartySelectTerminalScene';
 import { CombatScene } from './scenes/CombatScene';
 import { RouteScene } from './scenes/RouteScene';
 import { RestScene } from './scenes/RestScene';
 import { RunCompleteScene } from './scenes/RunCompleteScene';
 import { JourneyScene } from './scenes/JourneyScene';
-import { mountDebugBadge } from './util/logger';
+import { mountDebugBadge, mountDebugCollisionToggle } from './util/logger';
 import { initAudioSettings } from './util/audio';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -27,6 +30,9 @@ const config: Phaser.Types.Core.GameConfig = {
     BackgroundLoadScene,
     TitleScene,
     LeaderSelectScene,
+    LobbyScene,
+    PartySelectScene,
+    PartySelectTerminalScene,
     RouteScene,
     CombatScene,
     JourneyScene,
@@ -39,3 +45,4 @@ const game = new Phaser.Game(config);
 (window as unknown as { phaserGame: Phaser.Game }).phaserGame = game;
 initAudioSettings(game);
 mountDebugBadge();
+mountDebugCollisionToggle();

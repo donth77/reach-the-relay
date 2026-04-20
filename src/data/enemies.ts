@@ -30,24 +30,24 @@ export interface EnemyDef {
   // members (escort exempt). Uses a dedicated animation key.
   signatureAoE?: {
     element: Element;
-    animKey: string; // e.g. 'wreckling-attack-coolant-east'
+    animKey: string; // e.g. 'wreckwarden-attack-coolant-east'
     power: number; // damage multiplier vs full attack
   };
   // Boss-only: a ranged projectile attack that damages + resets target ATB.
   // Targeting is weighted random (highest-ATB party > random > last-damager).
   shockwave?: {
     element: Element; // projectile color element (usually 'surge')
-    animKey: string; // e.g. 'wreckling-attack-shockwave-east'
+    animKey: string; // e.g. 'wreckwarden-attack-shockwave-east'
     power: number; // damage multiplier vs basic attack
     // Y offset from sprite center where the projectile launches (negative = up).
-    // Wreckling's chest sits ~20px above center.
+    // Wreckwarden's chest sits ~20px above center.
     chestYOffset?: number;
   };
   behavior: EnemyBehavior;
   bossMusicKey?: string;
   attackSfxKey?: string;
   // Multiplier applied to this enemy's formation-slot offsets. Use > 1 for
-  // visually larger sprites that need more space (e.g. nanite cluster, wreckling)
+  // visually larger sprites that need more space (e.g. nanite cluster, wreckwarden)
   // so neighbors don't overlap. Defaults to 1 (no change).
   formationSpread?: number;
   // Short description shown in the enemy hover tooltip.
@@ -149,10 +149,10 @@ export const ENEMIES: Record<string, EnemyDef> = {
     description:
       'Cloud of bio-polymer nanobots — hits the whole party each turn for light damage. Melts under heat; current passes harmlessly through distributed nodes.',
   },
-  wreckling: {
-    id: 'wreckling',
-    name: 'Wreckling',
-    spriteKey: 'wreckling-east',
+  wreckwarden: {
+    id: 'wreckwarden',
+    name: 'Wreckwarden',
+    spriteKey: 'wreckwarden-east',
     scale: 2.2,
     hp: 85,
     attack: 20,
@@ -165,17 +165,17 @@ export const ENEMIES: Record<string, EnemyDef> = {
     ignoresGuard: true,
     signatureAoE: {
       element: 'coolant',
-      animKey: 'wreckling-attack-coolant-east',
+      animKey: 'wreckwarden-attack-coolant-east',
       power: 0.8,
     },
     shockwave: {
       element: 'surge',
-      animKey: 'wreckling-attack-shockwave-east',
+      animKey: 'wreckwarden-attack-shockwave-east',
       power: 1.0,
       chestYOffset: -20,
     },
     bossMusicKey: 'music-route-substation-boss',
-    attackSfxKey: 'sfx-wreckling-attack',
+    attackSfxKey: 'sfx-wreckwarden-attack',
     description:
       'Apex Censor enforcer — a tower of welded warbot plating. Ignores GUARD, hunts the escort, and vents cryogenic slams at the whole party. Armor and coolant systems shrug off heat and cold alike.',
   },

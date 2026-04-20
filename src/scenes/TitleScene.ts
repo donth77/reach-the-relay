@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { FONT } from '../util/ui';
 import { playMusicPool } from '../util/music';
-import { playSfx } from '../util/audio';
+import { playSfx, stopAllMusic } from '../util/audio';
 import { mountMusicToggle, unmountMusicToggle } from '../util/musicToggle';
 import { log } from '../util/logger';
 
@@ -97,10 +97,13 @@ export class TitleScene extends Phaser.Scene {
     // the font is ready — preventing a fallback-font flash on "START GAME".
     this.ensureFontThen(() => this.buildMenuRows());
 
-    // Cleanup when leaving.
+    // Cleanup when leaving. Stop the main theme so it doesn't bleed into
+    // the next scene's music — the lobby theme starts on LeaderSelect and
+    // both would otherwise overlap until one loop ended.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.blinkEvent?.remove();
       unmountMusicToggle();
+      stopAllMusic(this);
     });
   }
 

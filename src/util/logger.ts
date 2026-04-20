@@ -53,6 +53,30 @@ export function isDebugEnabled(): boolean {
   return DEBUG_ENABLED;
 }
 
+// Collision-debug toggle — persistent across scene transitions via a
+// module-scoped flag. Scenes that want to show collision overlays
+// subscribe with onDebugCollisionChange and redraw/toggle visibility.
+let debugCollisionOn = false;
+const debugCollisionListeners: Array<(on: boolean) => void> = [];
+
+export function isDebugCollisionOn(): boolean {
+  return debugCollisionOn;
+}
+
+export function setDebugCollision(on: boolean): void {
+  if (debugCollisionOn === on) return;
+  debugCollisionOn = on;
+  for (const fn of debugCollisionListeners) fn(on);
+}
+
+export function onDebugCollisionChange(fn: (on: boolean) => void): () => void {
+  debugCollisionListeners.push(fn);
+  return () => {
+    const i = debugCollisionListeners.indexOf(fn);
+    if (i >= 0) debugCollisionListeners.splice(i, 1);
+  };
+}
+
 // Mounts a small fixed-position badge in the top-left of the page so you can see
 // at a glance that debug logging is active. Call once at startup from main.ts.
 // Uses DOM (not Phaser) so it stays visible across every scene.
@@ -88,6 +112,45 @@ export function mountDebugBadge(): void {
     setTimeout(() => {
       el.textContent = originalText;
     }, 1200);
+  });
+  document.body.appendChild(el);
+}
+
+// Mounts a toggle button directly below the log badge. Click to show/hide
+// collision overlays (walkable polygon + obstacle rects) in any scene
+// that subscribes to onDebugCollisionChange. Persistent across scene
+// transitions. No-op in release builds.
+export function mountDebugCollisionToggle(): void {
+  if (!DEBUG_ENABLED) return;
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('debug-collision-toggle')) return;
+  const el = document.createElement('button');
+  el.id = 'debug-collision-toggle';
+  el.type = 'button';
+  const render = (): void => {
+    el.textContent = `DEBUG · collision ${debugCollisionOn ? 'ON' : 'off'}`;
+    el.style.color = debugCollisionOn ? '#ff66ff' : '#888888';
+    el.style.borderColor = debugCollisionOn ? '#ff66ff' : '#888888';
+  };
+  Object.assign(el.style, {
+    position: 'fixed',
+    top: '32px',
+    right: '6px',
+    zIndex: '9999',
+    padding: '3px 8px',
+    background: 'rgba(0,0,0,0.75)',
+    fontFamily: 'monospace',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    border: '1px solid',
+    borderRadius: '3px',
+    cursor: 'pointer',
+    letterSpacing: '0.5px',
+  });
+  render();
+  el.addEventListener('click', () => {
+    setDebugCollision(!debugCollisionOn);
+    render();
   });
   document.body.appendChild(el);
 }

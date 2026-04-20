@@ -89,7 +89,7 @@ public/
 - A `BackgroundVariant` is `{ key, enemyYOffset?, partyYOffset? }`. Per-variant offsets stack additively on top of route + encounter offsets.
 - Vertical positioning uses three offset sources, all summed:
   - **route-level** `enemyYOffset` / `partyYOffset` (whole route)
-  - **encounter-level** `enemyYOffset` (specific encounter, e.g. wreckling-alone needs -30)
+  - **encounter-level** `enemyYOffset` (specific encounter, e.g. wreckwarden-alone needs -30)
   - **variant-level** offsets (specific bg variant, e.g. transformer-yard pushes everyone down)
 - The `PANEL_CLEARANCE` clamp at the end of `buildUnits` prevents enemies from overlapping the bottom UI. It now relaxes by `Math.max(0, totalEnemyOffset)` so a downward offset isn't clamped back. Pure upward offsets (negative values) are NOT clamped against the top — caller's responsibility.
 - `BackgroundVariant` is exported from `data/routes.ts`; `CombatScene` keeps `this.activeBgVariant` set per-create so `buildUnits` can read variant offsets.
@@ -104,7 +104,7 @@ public/
 - **Idle pause/resume**: `setEnemyIdlesPaused(true/false)` pauses ALL enemy frame anims + tween bobs. Called when target selection begins (in `chooseTarget`) and resumed in `clearTargetSelect` (covers both commit and cancel). Per-unit variant `setUnitIdlePaused(u, paused)` is used to freeze dimmed peers while another enemy is attacking.
 - **BBOX table** in `createBattleSprite()` maps native canvas size → `{ centerX, centerY, feetY, headY }` for origin/shadow/HP-bar placement. Add a new entry whenever a new sprite size is introduced (measure via PIL opaque-bbox — see example below).
 - `flipSprite: true` on `EnemyDef` mirrors the sprite horizontally (use if source art faces the wrong way)
-- `scale` field determines displayed size (currently ~1.8-2.5 for most; Wreckling boss is 2.2 on 136px canvas)
+- `scale` field determines displayed size (currently ~1.8-2.5 for most; Wreckwarden boss is 2.2 on 136px canvas)
 - `formationSpread` multiplier on EnemyDef can widen spacing for large sprites (default 1; `Math.max(1, ...)` floor so `0` = off)
 
 ### Floaty enemies (Scout Drone, Nanite Swarm)

@@ -2,7 +2,7 @@
 
 A post-AI-collapse party escort RPG built for **Vibe Jam 2026**. SNES FF6 / Dragon Quest III visuals, Phaser 4 + TypeScript.
 
-> Unified super-AI brought civilization down decades ago. From the mall-atrium garden of **Greenhouse** you escort Dr. Vey to **The Relay**, a hilltop radio tower still broadcasting a reconnection beacon for scattered humans. The Censor hunts the airwaves — so sensitive intel travels by courier.
+> Unified super-AI brought civilization down decades ago. From the survivor commune of **Greenhouse** — a reclaimed pre-fall botanical conservatory — you escort Dr. Vey to **The Relay**, a hilltop radio tower still broadcasting a reconnection beacon for scattered humans. The Censor hunts the airwaves — so sensitive intel travels by courier.
 
 ## Running it
 

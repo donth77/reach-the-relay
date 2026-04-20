@@ -134,7 +134,7 @@ export const ROUTES: RouteDef[] = [
     encounters: [
       { enemies: ['wirehead', 'spider', 'sentry'] },
       {
-        enemies: ['wreckling'],
+        enemies: ['wreckwarden'],
         enemyYOffset: -80,
         partyYOffset: 40,
         backgroundKey: 'bg-dead-substation-boss',
@@ -142,7 +142,7 @@ export const ROUTES: RouteDef[] = [
     ],
     restAfter: [],
     // Two structural variants, picked 50/50 at run start. Both include a rest
-    // before the Wreckling boss so the party gets at least one breather:
+    // before the Wreckwarden boss so the party gets at least one breather:
     //  A) 2 encounters — one opener, then rest, then boss
     //  B) 3 encounters — opener, mid-fight, rest, boss
     variants: [
@@ -152,7 +152,7 @@ export const ROUTES: RouteDef[] = [
             enemies: ['wirehead', 'spider', 'sentry'],           
            },
           {
-            enemies: ['wreckling'],
+            enemies: ['wreckwarden'],
             enemyYOffset: -30,
             backgroundKey: 'bg-dead-substation-boss',
           },
@@ -168,7 +168,7 @@ export const ROUTES: RouteDef[] = [
             },
           { enemies: ['wirehead', 'spider', 'sentry'] },
           {
-            enemies: ['wreckling'],
+            enemies: ['wreckwarden'],
             enemyYOffset: -30,
             backgroundKey: 'bg-dead-substation-boss',
           },
@@ -196,13 +196,13 @@ export const ROUTES: RouteDef[] = [
   //   musicKeys: ['music-route-overgrown-bridge', 'music-route-overgrown-bridge-alt'],
   // },
   {
-    id: 'test-wreckling',
-    name: 'TEST — Wreckling Boss',
+    id: 'test-wreckwarden',
+    name: 'TEST — Wreckwarden Boss',
     subtitle: '1 encounter · dev boss test',
     difficulty: 'hard',
     encounters: [
       {
-        enemies: ['wreckling'],
+        enemies: ['wreckwarden'],
         enemyYOffset: -80,
         partyYOffset: 35,
         backgroundKey: 'bg-dead-substation-boss',

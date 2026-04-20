@@ -4,6 +4,7 @@ import { FONT } from '../util/ui';
 import { log } from '../util/logger';
 import { playMusicPool } from '../util/music';
 import { installPauseMenuEsc, isPauseMenuOpen } from '../util/pauseMenu';
+import { getHeadCrop } from '../util/headCrop';
 
 const JOURNEY_MUSIC_KEYS = ['music-journey', 'music-journey-alt', 'music-journey-alt2'];
 const JOURNEY_MUSIC_VOLUME = 0.25;
@@ -12,21 +13,6 @@ const JOURNEY_MUSIC_VOLUME = 0.25;
 // needed). The default crop is tuned for the standard 68×68 humanoid canvas.
 // Classes with a different canvas size (Vanguard 96, Medic 104) use per-class
 // overrides so their head region crops correctly.
-interface HeadCrop {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  canvas: number;
-}
-const HEAD_CROP_DEFAULT: HeadCrop = { x: 14, y: 4, w: 40, h: 28, canvas: 68 };
-const HEAD_CROP_BY_CLASS: Record<string, HeadCrop> = {
-  vanguard: { x: 30, y: 20, w: 36, h: 22, canvas: 96 },
-  medic: { x: 35, y: 21, w: 34, h: 28, canvas: 104 },
-};
-function getHeadCrop(classKey: string): HeadCrop {
-  return HEAD_CROP_BY_CLASS[classKey] ?? HEAD_CROP_DEFAULT;
-}
 const PORTRAIT_SCALE = 2.0;
 // Compact triangle formation: lead up front, two followers behind flanking.
 // Coordinates are offsets from the marker container's center.

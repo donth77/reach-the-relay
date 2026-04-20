@@ -1,8 +1,14 @@
 import * as Phaser from 'phaser';
+import {
+  isPortalEntry,
+  DEFAULT_PORTAL_LEADER,
+  DEFAULT_PORTAL_RECRUITS,
+} from '../util/portal';
+import { setLeader, addRecruit } from '../state/lobby';
 
 const PARTY_KEYS = ['vanguard', 'netrunner', 'medic', 'scavenger', 'cybermonk'] as const;
 const NPC_KEYS = ['drvey', 'mira'] as const;
-const HUMANOID_ENEMY_KEYS = ['wirehead', 'wreckling'] as const;
+const HUMANOID_ENEMY_KEYS = ['wirehead', 'wreckwarden'] as const;
 const OBJECT_ENEMY_KEYS = ['scoutdrone', 'spiderbot', 'sentryturret', 'naniteswarm'] as const;
 const DIRECTIONS = ['south', 'east', 'north', 'west'] as const;
 
@@ -56,14 +62,60 @@ export class BootScene extends Phaser.Scene {
           `assets/sprites/party/${key}/anim/attack-west/frame_${padded}.png`,
         );
       }
+      // Vanguard was regenerated in PixelLab with 4-direction walk-6-frames
+      // for the walkable LobbyScene. Other classes still use their original
+      // single-direction combat walk until they're regenerated too.
       const walkFrames =
-        key === 'cybermonk' || key === 'scavenger' || key === 'medic' ? 6 : 4;
+        key === 'cybermonk' || key === 'scavenger' || key === 'medic' || key === 'vanguard'
+          ? 6
+          : 4;
       for (let i = 0; i < walkFrames; i++) {
         const padded = i.toString().padStart(3, '0');
         this.load.image(
           `${key}-walk-west-${padded}`,
           `assets/sprites/party/${key}/anim/walk-west/frame_${padded}.png`,
         );
+      }
+      // World-walking animations — used by LobbyScene + overworld (stretch).
+      // Per-class, per-direction frame counts. Classes without an entry
+      // fall back to static rotation (no walk animation).
+      //
+      // West missing from a class's set = reuse east with flipX in the
+      // scene's update loop (no separate west animation needed).
+      const worldWalkFrames: Partial<
+        Record<string, Partial<Record<'south' | 'north' | 'east' | 'west', number>>>
+      > = {
+        vanguard: { south: 4, north: 6, east: 4 }, // no-shield; east 4-frame canonical, west via flipX
+        medic: { south: 6, north: 6, east: 6, west: 6 },
+        scavenger: { south: 6, north: 6, west: 6 }, // east via flipX (no dedicated east)
+        netrunner: { south: 6, north: 6, west: 6 }, // east via flipX (no dedicated east)
+        cybermonk: { south: 6, north: 6, west: 6 }, // east via flipX (no dedicated east)
+      };
+
+      // Lobby/overworld-specific static rotations — used when the lobby
+      // version of the sprite differs from the combat/portrait version
+      // (currently only Vanguard: a no-shield 136×136 variant for walking
+      // around Greenhouse, while combat keeps the shield-bearing 96×96).
+      if (key === 'vanguard') {
+        for (const dir of ['south', 'north', 'east', 'west'] as const) {
+          this.load.image(
+            `${key}-world-${dir}`,
+            `assets/sprites/party/${key}/world/${dir}.png`,
+          );
+        }
+      }
+      const classWalk = worldWalkFrames[key];
+      if (classWalk) {
+        for (const dir of Object.keys(classWalk) as Array<'south' | 'north' | 'east' | 'west'>) {
+          const count = classWalk[dir] ?? 0;
+          for (let i = 0; i < count; i++) {
+            const padded = i.toString().padStart(3, '0');
+            this.load.image(
+              `${key}-worldwalk-${dir}-${padded}`,
+              `assets/sprites/party/${key}/anim/worldwalk-${dir}/frame_${padded}.png`,
+            );
+          }
+        }
       }
       // Per-character death frame counts
       const deathFrames =
@@ -134,36 +186,36 @@ export class BootScene extends Phaser.Scene {
     }
     this.load.image('wirehead-downed', 'assets/sprites/enemies/wirehead/downed.png');
 
-    // Wreckling (enemy) walk + attack + death animations (east direction) + downed sprite
+    // Wreckwarden (enemy) walk + attack + death animations (east direction) + downed sprite
     for (let i = 0; i < 6; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
-        `wreckling-walk-east-${padded}`,
-        `assets/sprites/enemies/wreckling/anim/walk-east/frame_${padded}.png`,
+        `wreckwarden-walk-east-${padded}`,
+        `assets/sprites/enemies/wreckwarden/anim/walk-east/frame_${padded}.png`,
       );
     }
     for (let i = 0; i < 4; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
-        `wreckling-attack-east-${padded}`,
-        `assets/sprites/enemies/wreckling/anim/attack-east/frame_${padded}.png`,
+        `wreckwarden-attack-east-${padded}`,
+        `assets/sprites/enemies/wreckwarden/anim/attack-east/frame_${padded}.png`,
       );
     }
     for (let i = 0; i < 4; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
-        `wreckling-death-east-${padded}`,
-        `assets/sprites/enemies/wreckling/anim/death-east/frame_${padded}.png`,
+        `wreckwarden-death-east-${padded}`,
+        `assets/sprites/enemies/wreckwarden/anim/death-east/frame_${padded}.png`,
       );
     }
     for (let i = 0; i < 8; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
-        `wreckling-idle-east-${padded}`,
-        `assets/sprites/enemies/wreckling/anim/idle-east/frame_${padded}.png`,
+        `wreckwarden-idle-east-${padded}`,
+        `assets/sprites/enemies/wreckwarden/anim/idle-east/frame_${padded}.png`,
       );
     }
-    this.load.image('wreckling-downed', 'assets/sprites/enemies/wreckling/downed.png');
+    this.load.image('wreckwarden-downed', 'assets/sprites/enemies/wreckwarden/downed.png');
 
     // Sentry thermal attack (elemental alternate) — 8 frames
     for (let i = 0; i < 8; i++) {
@@ -174,21 +226,21 @@ export class BootScene extends Phaser.Scene {
       );
     }
 
-    // Wreckling coolant attack (elemental alternate, AoE) — 9 frames, PixelLab V3
+    // Wreckwarden coolant attack (elemental alternate, AoE) — 9 frames, PixelLab V3
     for (let i = 0; i < 9; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
-        `wreckling-attack-coolant-east-${padded}`,
-        `assets/sprites/enemies/wreckling/anim/attack-coolant-east/frame_${padded}.png`,
+        `wreckwarden-attack-coolant-east-${padded}`,
+        `assets/sprites/enemies/wreckwarden/anim/attack-coolant-east/frame_${padded}.png`,
       );
     }
 
-    // Wreckling Shockwave (damage + ATB reset, surge element) — 17 frames, PixelLab
+    // Wreckwarden Shockwave (damage + ATB reset, surge element) — 17 frames, PixelLab
     for (let i = 0; i < 17; i++) {
       const padded = i.toString().padStart(3, '0');
       this.load.image(
-        `wreckling-attack-shockwave-east-${padded}`,
-        `assets/sprites/enemies/wreckling/anim/attack-shockwave-east/frame_${padded}.png`,
+        `wreckwarden-attack-shockwave-east-${padded}`,
+        `assets/sprites/enemies/wreckwarden/anim/attack-shockwave-east/frame_${padded}.png`,
       );
     }
 
@@ -276,6 +328,9 @@ export class BootScene extends Phaser.Scene {
     this.load.image('title-bg-off', 'assets/title/bg-off.png');
     this.load.image('title-logo', 'assets/logo/logo-surge.png');
 
+    this.load.image('lobby-greenhouse', 'assets/backgrounds/lobby/greenhouse-v1.webp');
+    this.load.image('lobby-terminal', 'assets/sprites/props/lobby/terminal.webp');
+
     this.load.image('bg-overgrown-highway', 'assets/backgrounds/combat/overgrown_highway.webp');
     this.load.image(
       'bg-overgrown-highway-tunnel',
@@ -348,8 +403,8 @@ export class BootScene extends Phaser.Scene {
     this.load.audio('sfx-sentry-attack', 'assets/audio/sfx/enemy/sentry-attack.mp3');
     this.load.audio('sfx-spider-attack', 'assets/audio/sfx/enemy/spider-attack.mp3');
     this.load.audio('sfx-wirehead-attack', 'assets/audio/sfx/enemy/wirehead-attack.mp3');
-    this.load.audio('sfx-wreckling-attack', 'assets/audio/sfx/enemy/wreckling-attack.mp3');
-    this.load.audio('sfx-wreckling-slam', 'assets/audio/sfx/enemy/wreckling-slam.mp3');
+    this.load.audio('sfx-wreckwarden-attack', 'assets/audio/sfx/enemy/wreckwarden-attack.mp3');
+    this.load.audio('sfx-wreckwarden-slam', 'assets/audio/sfx/enemy/wreckwarden-slam.mp3');
     this.load.audio('sfx-scoutdrone-attack', 'assets/audio/sfx/enemy/scoutdrone-attack.mp3');
     this.load.audio('sfx-naniteswarm-attack', 'assets/audio/sfx/enemy/naniteswarm-attack.mp3');
 
@@ -369,6 +424,18 @@ export class BootScene extends Phaser.Scene {
     // — these aren't needed until RouteScene or later, so we don't block Title
     // on them.
     this.scene.launch('BackgroundLoad');
+
+    // Vibe Jam 2026 webring entry: if the URL has `?portal=true`, skip all
+    // menus (Title, LeaderSelect, PartySelect) and drop the player straight
+    // into the walkable Lobby with a default party. The webring spec
+    // mandates "no loading screens, no input screens" for continuity.
+    if (isPortalEntry()) {
+      setLeader(DEFAULT_PORTAL_LEADER);
+      for (const id of DEFAULT_PORTAL_RECRUITS) addRecruit(id);
+      this.scene.start('Lobby');
+      return;
+    }
+
     this.scene.start('Title');
   }
 }

@@ -275,48 +275,48 @@ export class CombatScene extends Phaser.Scene {
       this.anims.create({ key: 'wirehead-idle-east', frames, frameRate: 6, repeat: -1 });
     }
 
-    // Wreckling (enemy) — walk + attack + death (east direction)
-    if (!this.anims.exists('wreckling-walk-east')) {
+    // Wreckwarden (enemy) — walk + attack + death (east direction)
+    if (!this.anims.exists('wreckwarden-walk-east')) {
       const frames = Array.from({ length: 6 }, (_, i) => ({
-        key: `wreckling-walk-east-${i.toString().padStart(3, '0')}`,
+        key: `wreckwarden-walk-east-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'wreckling-walk-east', frames, frameRate: 8, repeat: -1 });
+      this.anims.create({ key: 'wreckwarden-walk-east', frames, frameRate: 8, repeat: -1 });
     }
-    if (!this.anims.exists('wreckling-attack-east')) {
+    if (!this.anims.exists('wreckwarden-attack-east')) {
       const frames = Array.from({ length: 4 }, (_, i) => ({
-        key: `wreckling-attack-east-${i.toString().padStart(3, '0')}`,
+        key: `wreckwarden-attack-east-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'wreckling-attack-east', frames, frameRate: 7, repeat: 0 });
+      this.anims.create({ key: 'wreckwarden-attack-east', frames, frameRate: 7, repeat: 0 });
     }
-    if (!this.anims.exists('wreckling-attack-coolant-east')) {
+    if (!this.anims.exists('wreckwarden-attack-coolant-east')) {
       const frames = Array.from({ length: 9 }, (_, i) => ({
-        key: `wreckling-attack-coolant-east-${i.toString().padStart(3, '0')}`,
+        key: `wreckwarden-attack-coolant-east-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'wreckling-attack-coolant-east', frames, frameRate: 8, repeat: 0 });
+      this.anims.create({ key: 'wreckwarden-attack-coolant-east', frames, frameRate: 8, repeat: 0 });
     }
-    if (!this.anims.exists('wreckling-attack-shockwave-east')) {
+    if (!this.anims.exists('wreckwarden-attack-shockwave-east')) {
       const frames = Array.from({ length: 17 }, (_, i) => ({
-        key: `wreckling-attack-shockwave-east-${i.toString().padStart(3, '0')}`,
+        key: `wreckwarden-attack-shockwave-east-${i.toString().padStart(3, '0')}`,
       }));
       // 17 frames at 12fps ≈ 1.4s total — gives the fist-raise + slam its full beat
       this.anims.create({
-        key: 'wreckling-attack-shockwave-east',
+        key: 'wreckwarden-attack-shockwave-east',
         frames,
         frameRate: 12,
         repeat: 0,
       });
     }
-    if (!this.anims.exists('wreckling-death-east')) {
+    if (!this.anims.exists('wreckwarden-death-east')) {
       const frames = Array.from({ length: 4 }, (_, i) => ({
-        key: `wreckling-death-east-${i.toString().padStart(3, '0')}`,
+        key: `wreckwarden-death-east-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'wreckling-death-east', frames, frameRate: 7, repeat: 0 });
+      this.anims.create({ key: 'wreckwarden-death-east', frames, frameRate: 7, repeat: 0 });
     }
-    if (!this.anims.exists('wreckling-idle-east')) {
+    if (!this.anims.exists('wreckwarden-idle-east')) {
       const frames = Array.from({ length: 8 }, (_, i) => ({
-        key: `wreckling-idle-east-${i.toString().padStart(3, '0')}`,
+        key: `wreckwarden-idle-east-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'wreckling-idle-east', frames, frameRate: 6, repeat: -1 });
+      this.anims.create({ key: 'wreckwarden-idle-east', frames, frameRate: 6, repeat: -1 });
     }
 
     // Sentry (enemy id 'sentry') — walk + attack + death (east, SpriteCook animations)
@@ -646,7 +646,11 @@ export class CombatScene extends Phaser.Scene {
   private unitFromClass(def: ClassDef, side: Side, posX: number, posY: number): Unit {
     return this.makeUnit({
       id: def.id,
-      name: def.name,
+      // Party units display by personal name in combat (turn order,
+      // damage popups, dialogue lines, tooltips). The role — e.g.
+      // "Vanguard" — already served its purpose at selection time; in
+      // the fight, "Rowan" feels more personal than "Medic".
+      name: def.personName,
       side,
       classDef: def,
       spriteKey: def.spriteKey,
@@ -695,14 +699,14 @@ export class CombatScene extends Phaser.Scene {
 
     const tempSprite = this.add.image(u.posX, u.posY, u.spriteKey).setScale(u.scale);
     const spriteWidth = tempSprite.displayWidth;
-    const nativeCanvasSize = tempSprite.height; // 68 for humanoids, 136 for wreckling
+    const nativeCanvasSize = tempSprite.height; // 68 for humanoids, 136 for wreckwarden
     tempSprite.destroy();
 
     // Per-sprite character bbox within its native canvas (from PIL analysis).
     // Used to (a) center the visible character at (posX, posY) via setOrigin and
     // (b) position shadow/HP bar relative to the character, not the canvas.
     // feetX is optional — use when the character's feet are offset from the
-    // opaque bbox center (e.g. Wreckling's backpack pulls the bbox leftward).
+    // opaque bbox center (e.g. Wreckwarden's backpack pulls the bbox leftward).
     // Defaults to centerX if unset.
     const BBOX: Record<
       number,
@@ -718,7 +722,7 @@ export class CombatScene extends Phaser.Scene {
       96: { centerX: 46.5, centerY: 47.5, feetY: 71, headY: 24 },
       // Calibrated to the new 104×104 Medic west.png.
       104: { centerX: 53.5, centerY: 50.5, feetY: 76, headY: 25 },
-      // Calibrated to wreckling idle-east frames (plays 95% of combat), not
+      // Calibrated to wreckwarden idle-east frames (plays 95% of combat), not
       // the static east.png — idle frames sit ~5px higher and 1px right.
       136: { centerX: 63.5, centerY: 72.5, feetY: 128, headY: 17, feetX: 67.5 },
     };
@@ -741,7 +745,7 @@ export class CombatScene extends Phaser.Scene {
     u.feetOffsetY = feetDistBelowOrigin;
     const shadowY = u.posY + feetDistBelowOrigin + 4 + (isFloaty ? 25 : 0);
     // Horizontal offset of feet from sprite origin — zero when the character's
-    // feet sit at the bbox center, non-zero when asymmetric (e.g. Wreckling's
+    // feet sit at the bbox center, non-zero when asymmetric (e.g. Wreckwarden's
     // offset backpack).
     const feetOffsetX = ((bbox.feetX ?? bbox.centerX) - bbox.centerX) * u.scale;
     const shadowX = u.posX + feetOffsetX;
@@ -2247,6 +2251,10 @@ export class CombatScene extends Phaser.Scene {
           if (!target.sprite) return;
           if (this.textures.exists(downedKey)) {
             target.sprite.setTexture(downedKey);
+            // Nudge downed sprite downward so its opaque body rests on the
+            // standing-pose ground line (see ClassDef.downedYOffset).
+            const offset = target.classDef?.downedYOffset ?? 0;
+            if (offset) target.sprite.y = target.posY + offset;
           }
           if (target.side === 'enemy') {
             // Tween the downed frame out to 0 so the disappearance is smooth.
@@ -3083,10 +3091,10 @@ export class CombatScene extends Phaser.Scene {
         this.showMessage(`${enemy.name} is blinded by smoke!`);
         return;
       }
-      playSfx(this, 'sfx-wreckling-slam', 1);
+      playSfx(this, 'sfx-wreckwarden-slam', 1);
       // Ground shake — feel the impact.
       this.cameras.main.shake(380, 0.006);
-      // Big centered shockwave burst at the wreckling's feet.
+      // Big centered shockwave burst at the wreckwarden's feet.
       this.playSignatureSlamBurst(enemy, sig.element);
       this.showMessage(`${enemy.name} COOLANT SLAM — cryogenic burst hits the party!`);
       for (const p of partyTargets) {
@@ -3166,7 +3174,7 @@ export class CombatScene extends Phaser.Scene {
         this.showMessage(`${enemy.name} is blinded by smoke!`);
         return;
       }
-      playSfx(this, 'sfx-wreckling-attack', 1);
+      playSfx(this, 'sfx-wreckwarden-attack', 1);
       const damage = Math.max(1, calculateDamage(enemy, target, shock.power, shock.element));
       this.playElementalImpact(target, shock.element);
       this.applyDamage(target, damage, false, shock.element);
@@ -3190,7 +3198,7 @@ export class CombatScene extends Phaser.Scene {
     };
 
     const hasAnim = this.anims.exists(shock.animKey);
-    // Blue-tinted projectile for Wreckling's shockwave (rather than surge yellow).
+    // Blue-tinted projectile for Wreckwarden's shockwave (rather than surge yellow).
     const SHOCKWAVE_BLUE = 0x5ac8ff;
     if (hasAnim) {
       this.playPartialAdvanceRangedAttack(
@@ -3237,7 +3245,7 @@ export class CombatScene extends Phaser.Scene {
 
     // Position attacker just in front of the target on their own side. Align
     // the attacker's FEET with the target's feet (not their origins), so
-    // oversized targets like Wreckling don't leave attackers floating near
+    // oversized targets like Wreckwarden don't leave attackers floating near
     // their shoulders. Falls through to target.posY when feetOffsetY is unset.
     const facingDir = target.posX < u.posX ? -1 : 1;
     let forwardX = target.posX - facingDir * (attackerHalfW + targetHalfW + gap);

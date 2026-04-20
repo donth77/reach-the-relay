@@ -57,7 +57,7 @@ function itemsSummary(stats: SimStats): string {
 }
 
 const lines: string[] = [];
-lines.push('# Wreckling Battle Simulations');
+lines.push('# Wreckwarden Battle Simulations');
 lines.push('');
 lines.push(`_Generated ${new Date().toISOString()}_  ·  ${TRIALS} trials per scenario`);
 lines.push('');
@@ -89,9 +89,9 @@ lines.push(
   '- **Evasion**: 30% dodge on basic physical attacks vs evasive enemies (not relevant for boss)',
 );
 lines.push('');
-lines.push('## Current Wreckling stats');
+lines.push('## Current Wreckwarden stats');
 lines.push('');
-const w = ENEMIES.wreckling;
+const w = ENEMIES.wreckwarden;
 lines.push(
   `HP **${w.hp}** · Attack **${w.attack}** · Defense **${w.defense}** · Speed **${w.speed}**`,
 );
@@ -101,11 +101,11 @@ lines.push(
 );
 lines.push('');
 
-// Direct Line inventory (the route that leads to Wreckling)
+// Direct Line inventory (the route that leads to Wreckwarden)
 const directLineInventory = { stimpak: 1, powercell: 0, adrenaline: 0, smokegrenade: 0 };
 
 // ============ Block 1: all party combos at current stats ============
-lines.push('## All 10 party combos vs current Wreckling (fresh + degraded)');
+lines.push('## All 10 party combos vs current Wreckwarden (fresh + degraded)');
 lines.push('');
 lines.push(
   "_Fresh = full HP/MP. Degraded = arriving from Direct Line's prior encounter: ~80% HP, ~70% MP for casters, one use of each limited ability already spent._",
@@ -144,9 +144,9 @@ lines.push('');
 
 // ============ Block 2: HP sweep for balanced party ============
 const balancedParty = ['vanguard', 'netrunner', 'medic'];
-lines.push(`## HP sweep on Wreckling — degraded-start party = ${partyLabel(balancedParty)}`);
+lines.push(`## HP sweep on Wreckwarden — degraded-start party = ${partyLabel(balancedParty)}`);
 lines.push('');
-lines.push('| Wreckling HP | Fresh Win % | Degraded Win % | Avg escort HP (degraded) |');
+lines.push('| Wreckwarden HP | Fresh Win % | Degraded Win % | Avg escort HP (degraded) |');
 lines.push('|---:|---:|---:|---:|');
 for (const hp of [60, 70, 80, 85, 90, 100, 110, 120]) {
   const fresh = runTrials(
@@ -173,9 +173,9 @@ for (const hp of [60, 70, 80, 85, 90, 100, 110, 120]) {
 lines.push('');
 
 // ============ Block 3: Attack sweep ============
-lines.push(`## Attack sweep on Wreckling (party = ${partyLabel(balancedParty)}, HP=${w.hp})`);
+lines.push(`## Attack sweep on Wreckwarden (party = ${partyLabel(balancedParty)}, HP=${w.hp})`);
 lines.push('');
-lines.push('| Wreckling Atk | Win % | Avg escort HP | Escort KO % |');
+lines.push('| Wreckwarden Atk | Win % | Avg escort HP | Escort KO % |');
 lines.push('|---:|---:|---:|---:|');
 for (const atk of [16, 18, 20, 22, 24]) {
   const stats = runTrials(
@@ -194,9 +194,9 @@ for (const atk of [16, 18, 20, 22, 24]) {
 lines.push('');
 
 // ============ Block 4: Defense sweep ============
-lines.push(`## Defense sweep on Wreckling (party = ${partyLabel(balancedParty)}, HP=${w.hp})`);
+lines.push(`## Defense sweep on Wreckwarden (party = ${partyLabel(balancedParty)}, HP=${w.hp})`);
 lines.push('');
-lines.push('| Wreckling Def | Win % | Avg turns | Escort KO % |');
+lines.push('| Wreckwarden Def | Win % | Avg turns | Escort KO % |');
 lines.push('|---:|---:|---:|---:|');
 for (const def of [6, 8, 9, 10, 12]) {
   const stats = runTrials(
@@ -252,11 +252,11 @@ lines.push(`Median party combo win rate: **${fmtPct(medianWr)}** ${inTargetBand(
 lines.push('');
 if (medianWr < TARGET_MIN) {
   lines.push(
-    `Median is **below** the 50–60% target band. Consider lowering Wreckling HP, defense, or attack — cross-reference the sweep tables above to pick the lightest-touch tweak that lands in band.`,
+    `Median is **below** the 50–60% target band. Consider lowering Wreckwarden HP, defense, or attack — cross-reference the sweep tables above to pick the lightest-touch tweak that lands in band.`,
   );
 } else if (medianWr > TARGET_MAX) {
   lines.push(
-    `Median is **above** the 50–60% target band. Wreckling is currently too easy for a balanced party. Consider +5–10 HP or +1 defense/attack — again see sweeps above.`,
+    `Median is **above** the 50–60% target band. Wreckwarden is currently too easy for a balanced party. Consider +5–10 HP or +1 defense/attack — again see sweeps above.`,
   );
 } else {
   lines.push(
@@ -279,7 +279,7 @@ const directLineVariantA: RouteConfig = {
   partyClassIds: routeParty,
   encounters: [
     { enemyIds: ['wirehead', 'spider', 'sentry'] },
-    { enemyIds: ['wreckling'], isBoss: true },
+    { enemyIds: ['wreckwarden'], isBoss: true },
   ],
   // 2-enc variant: rest before boss, plus 2 stim + 1 powercell for a dense run.
   startingInventory: { stimpak: 2, powercell: 1, adrenaline: 0, smokegrenade: 0 },
@@ -290,7 +290,7 @@ const directLineVariantB: RouteConfig = {
   encounters: [
     { enemyIds: ['wirehead', 'spider', 'sentry'] },
     { enemyIds: ['spider', 'sentry'] },
-    { enemyIds: ['wreckling'], isBoss: true },
+    { enemyIds: ['wreckwarden'], isBoss: true },
   ],
   startingInventory: directLineInventory,
   restAfter: [1],
