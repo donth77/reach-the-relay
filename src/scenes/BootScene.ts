@@ -330,6 +330,24 @@ export class BootScene extends Phaser.Scene {
 
     this.load.image('lobby-greenhouse', 'assets/backgrounds/lobby/greenhouse-v1.webp');
     this.load.image('lobby-terminal', 'assets/sprites/props/lobby/terminal.webp');
+    this.load.image('lobby-planter-bed', 'assets/sprites/props/lobby/planter-bed.webp');
+    this.load.image('lobby-table', 'assets/sprites/props/lobby/table.webp');
+    this.load.image('lobby-workbench', 'assets/sprites/props/lobby/workbench.webp');
+    this.load.image('lobby-sidetable', 'assets/sprites/props/lobby/sidetable.webp');
+    this.load.image('lobby-radio', 'assets/sprites/props/lobby/radio.webp');
+    this.load.image('lobby-mapboard', 'assets/sprites/props/lobby/mapboard.png');
+    this.load.image('lobby-map-full', 'assets/ui/map-full.png');
+
+    // Scavenger "working at the workbench" idle animation (9 frames,
+    // west-facing) — used by the stationary lobby NPC next to the
+    // workbench prop.
+    for (let i = 0; i < 9; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `scavenger-workbench-west-${padded}`,
+        `assets/sprites/party/scavenger/anim/workbench-west/frame_${padded}.png`,
+      );
+    }
 
     this.load.image('bg-overgrown-highway', 'assets/backgrounds/combat/overgrown_highway.webp');
     this.load.image(

@@ -37,6 +37,32 @@ export function isPortalEntry(): boolean {
 }
 
 /**
+ * True when the current build should show the Vibe Jam exit portal + branding.
+ * Enabled in three cases:
+ *  - `VITE_JAM_MODE=1` at build time (itch.io / jam submission build — portal
+ *    is baked in and visible on every load, no URL params required)
+ *  - `?portal=true` on the URL (player arrived via the webring — always show
+ *    the portal so the loop isn't broken)
+ *  - `?jam=1` on the URL (author's explicit opt-in for ad-hoc testing)
+ *
+ * Single source file can produce both a jam binary (env set) and a standalone
+ * binary (env unset). The standalone binary still activates jam mode when
+ * arriving via the webring so the return loop keeps working.
+ */
+export function isJamMode(): boolean {
+  // Vite replaces import.meta.env.VITE_* at build time. Stringly typed by
+  // convention — accept '1' or 'true' so the .env.example doc value and
+  // any reasonable truthy spelling both work.
+  const envFlag = import.meta.env.VITE_JAM_MODE;
+  if (envFlag === '1' || envFlag === 'true') return true;
+  if (typeof window === 'undefined') return false;
+  const q = new URLSearchParams(window.location.search);
+  if (q.get('portal') === 'true') return true;
+  if (q.get('jam') === '1') return true;
+  return false;
+}
+
+/**
  * Read every portal-relevant param off the URL. All fields are optional per
  * the webring spec; callers must tolerate missing values. `portal` is the
  * only field that's guaranteed when `isPortalEntry()` is true.

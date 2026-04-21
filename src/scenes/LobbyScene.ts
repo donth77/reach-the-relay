@@ -9,6 +9,9 @@ import { getLobbyState } from '../state/lobby';
 import { isDebugCollisionOn, onDebugCollisionChange, log } from '../util/logger';
 import { NpcAgent, isDialogueOpen } from './lobby/npcAgent';
 import { CrewHud } from './lobby/crewHud';
+import { openMapModal, isMapOpen } from './lobby/mapModal';
+import { CLASSES } from '../data/classes';
+import { buildPortalExitUrl, getPortalParams, isJamMode } from '../util/portal';
 
 // Walkable Greenhouse. Phase 2 skeleton — leader movement + scrolling
 // camera. NPCs + dialogue + terminal menu land in later phases.
@@ -31,27 +34,41 @@ const DEFAULT_PLAYER_SCALE = 2.0;
 // lobby sprite is 136×136 (≈2× the 68×68 canvas), so his multiplier is
 // ≈half of DEFAULT_PLAYER_SCALE.
 const LOBBY_SCALE: Partial<Record<string, number>> = {
-  vanguard: 1.4,
+  // 68px classes have character bbox ~60px × scale 2.0 = ~120px display.
+  // Vanguard's 136px canvas character bbox is ~64px tall → scale 1.85
+  // brings him to ~118px display, roughly matching the other classes.
+  vanguard: 1.6,
 };
 // Walkable floor polygon in world coords (1280×720). Measured on the
 // source bg image (2754×1536) and converted with scale factors
 // 1280/2754 ≈ 0.4647 (x) and 720/1536 = 0.46875 (y). Hexagonal room with
 // angled top-left and top-right corners, and a doorway notch in the
-// bottom wall that extends to the image's bottom edge (which doubles as
-// the exit-portal trigger zone once we wire it).
+// bottom wall that extends PAST the image's bottom edge (y=720) down to
+// y=770 — gives the player 50px of off-screen runway so walking into the
+// portal feels like actually walking through the doorway rather than
+// bonking into the bottom of the room.
 //
 // Vertices ordered clockwise starting from the upper-left end of the top
 // edge (where the top-left diagonal meets the horizontal top wall).
+const DOORWAY_X_LEFT = 581;
+const DOORWAY_X_RIGHT = 699;
+const DOORWAY_Y_TOP = 656;
+const DOORWAY_Y_BOTTOM = 870; // ~150px past image bottom (720) — long off-screen runway
+// Feet-Y threshold for triggering the portal redirect. Tuned so the player
+// sprite is mostly off-screen when it fires: at scale 2 (136px displayHeight)
+// with the 0.25 × displayHeight feet offset, feet y ≈ 820 puts the sprite
+// top at ~718 — just a sliver of helmet visible, reads as "walked out".
+const PORTAL_TRIGGER_Y = 820;
 const WALK_POLY_POINTS: number[] = [
   212, 311, // 1. top edge, left end
   1067, 311, // 2. top edge, right end
   1153, 393, // 3. right wall, top (end of top-right diagonal)
-  1153, 656, // 4. right wall, bottom
-  699, 656, // 5. doorway top-right
-  699, 720, // 6. doorway bottom-right (image bottom edge)
-  581, 720, // 7. doorway bottom-left (image bottom edge)
-  581, 656, // 8. doorway top-left
-  125, 656, // 9. left wall, bottom
+  1153, DOORWAY_Y_TOP, // 4. right wall, bottom
+  DOORWAY_X_RIGHT, DOORWAY_Y_TOP, // 5. doorway top-right
+  DOORWAY_X_RIGHT, DOORWAY_Y_BOTTOM, // 6. doorway bottom-right (off-screen)
+  DOORWAY_X_LEFT, DOORWAY_Y_BOTTOM, // 7. doorway bottom-left (off-screen)
+  DOORWAY_X_LEFT, DOORWAY_Y_TOP, // 8. doorway top-left
+  125, DOORWAY_Y_TOP, // 9. left wall, bottom
   125, 394, // 10. left wall, top (end of top-left diagonal)
 ];
 
@@ -78,6 +95,11 @@ export class LobbyScene extends Phaser.Scene {
   private terminalInteractPos?: Phaser.Math.Vector2;
   private readonly TERMINAL_INTERACT_RANGE = 80;
   private terminalPromptText?: Phaser.GameObjects.Text;
+  // Map board — second stationary interactable north of the terminal.
+  // Opens a full-screen route map modal when the player presses E.
+  private mapBoardInteractPos?: Phaser.Math.Vector2;
+  private readonly MAPBOARD_INTERACT_RANGE = 80;
+  private mapBoardPromptText?: Phaser.GameObjects.Text;
   // Lobby NPCs — patrolling recruitables + passive crew. Each entry owns
   // its sprite, patrol loop, proximity prompt, and collision rect.
   // Refreshing this list is where new NPCs land.
@@ -85,6 +107,14 @@ export class LobbyScene extends Phaser.Scene {
   // Top-right HUD showing current escort + crew roster. Re-renders when
   // recruits change (e.g. after an NPC dialogue closes).
   private crewHud?: CrewHud;
+  // Portal trigger one-shot — flips true the frame the player's feet cross
+  // PORTAL_TRIGGER_Y inside the doorway. Blocks the redirect from firing
+  // every frame while the location-change is in flight.
+  private portalTriggered = false;
+  // Ref URL from inbound ?ref= param. Populated only when the player
+  // arrived via the webring. Used to render a RETURN portal in the
+  // left half of the doorway and redirect there instead of to vibejam.cc.
+  private portalRefUrl?: string;
 
   constructor() {
     super('Lobby');
@@ -103,7 +133,18 @@ export class LobbyScene extends Phaser.Scene {
     this.currentAnimKey = null;
     this.terminalInteractPos = undefined;
     this.terminalPromptText = undefined;
+    this.mapBoardInteractPos = undefined;
+    this.mapBoardPromptText = undefined;
     this.crewHud = undefined;
+    this.portalTriggered = false;
+    this.portalRefUrl = undefined;
+
+    // Capture inbound ?ref= ONCE on create — if the player arrived via the
+    // webring with a back-ref, we render a return portal alongside the exit.
+    const portalParams = getPortalParams();
+    if (portalParams.portal && portalParams.ref) {
+      this.portalRefUrl = portalParams.ref;
+    }
 
     const lobby = getLobbyState();
     if (!lobby.leaderId) {
@@ -165,6 +206,20 @@ export class LobbyScene extends Phaser.Scene {
         Math.round(TERMINAL_DISPLAY_H) + TERMINAL_COLLISION_EXTEND_DOWN,
       ),
     );
+
+    // Planter bed — decorative only. Sits against the top-right section
+    // of the north wall. Scale defaults to 0.7 in spawnPlanter.
+    this.spawnPlanter(830, 360);
+    // Communal table + stools, centered horizontally with the planter
+    // and well clear of the doorway path (doorway x=581-699).
+    this.spawnTable(830, 560);
+    // Workbench flush against the left wall. Sprite is the vertical
+    // wall-oriented variant (66×141 content) so feet_x sits close to
+    // the left wall at x=125.
+    this.spawnWorkbench(150, 650);
+    // Side table + radio tucked against the top-right wall, just below
+    // the planter. Radio sits on the lid.
+    this.spawnSideTableWithRadio(1000, 350, 0.85);
     // Interaction anchor = keyboard level (a bit south of the terminal's
     // base so the range centers on where the player stands to interact).
     this.terminalInteractPos = new Phaser.Math.Vector2(terminalX, terminalFeetY + 20);
@@ -184,6 +239,55 @@ export class LobbyScene extends Phaser.Scene {
     this.tweens.add({
       targets: this.terminalPromptText,
       y: this.terminalPromptText.y - 4,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Map board — hanging on the north wall to the right of the terminal.
+    // Interactive: E/Enter/Space opens a full-screen route map modal.
+    // Sprite is 270×270 native; content bbox (0, 22, 270, 247) → visible
+    // 270×225. Scale 0.5 is an integer divisor (crisp nearest-neighbor
+    // downsample) → displayed 135×112 visible area.
+    const MAPBOARD_SCALE = 0.5;
+    const MAPBOARD_DISPLAY_H = 270 * MAPBOARD_SCALE;
+    const mapBoardX = 395;
+    const mapBoardFeetY = 340;
+    this.add
+      .image(mapBoardX, mapBoardFeetY, 'lobby-mapboard')
+      .setOrigin(0.5, 1)
+      .setScale(MAPBOARD_SCALE)
+      .setDepth(mapBoardFeetY);
+    // Collision rect covers the visible board footprint so the player
+    // can't clip into the wall art. Extended south so they stop a few
+    // px below the board's base — reads as "reading the map".
+    const MAPBOARD_COLL_W = 120;
+    const MAPBOARD_COLL_H = 90;
+    const MAPBOARD_COLL_EXTEND_DOWN = 15;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        mapBoardX - MAPBOARD_COLL_W / 2,
+        mapBoardFeetY - MAPBOARD_COLL_H,
+        MAPBOARD_COLL_W,
+        MAPBOARD_COLL_H + MAPBOARD_COLL_EXTEND_DOWN,
+      ),
+    );
+    this.mapBoardInteractPos = new Phaser.Math.Vector2(mapBoardX, mapBoardFeetY + 20);
+    this.mapBoardPromptText = this.add
+      .text(mapBoardX, mapBoardFeetY - Math.round(MAPBOARD_DISPLAY_H) + 10, '▼ E', {
+        fontFamily: FONT,
+        fontSize: '16px',
+        color: '#8aff8a',
+        stroke: '#000000',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(99998)
+      .setVisible(false);
+    this.tweens.add({
+      targets: this.mapBoardPromptText,
+      y: this.mapBoardPromptText.y - 4,
       duration: 500,
       yoyo: true,
       repeat: -1,
@@ -213,6 +317,8 @@ export class LobbyScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     this.spawnNpcs();
+
+    this.drawPortals();
 
     this.cursorKeys = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys({
@@ -272,8 +378,9 @@ export class LobbyScene extends Phaser.Scene {
       this.scene.pause();
       this.scene.launch('PartySelectTerminal');
     };
+    const openMap = () => openMapModal(this);
     const tryInteract = () => {
-      if (isDialogueOpen()) return;
+      if (isDialogueOpen() || isMapOpen()) return;
       const feetYOffset = this.player.displayHeight * 0.25;
       const feetX = this.player.x;
       const feetY = this.player.y + feetYOffset;
@@ -295,6 +402,12 @@ export class LobbyScene extends Phaser.Scene {
           (feetY - this.terminalInteractPos.y) ** 2;
         if (!best || d2 < best.dist2) best = { run: openTerminal, dist2: d2 };
       }
+      if (this.isPlayerNearMapBoard() && this.mapBoardInteractPos) {
+        const d2 =
+          (feetX - this.mapBoardInteractPos.x) ** 2 +
+          (feetY - this.mapBoardInteractPos.y) ** 2;
+        if (!best || d2 < best.dist2) best = { run: openMap, dist2: d2 };
+      }
       if (best) {
         best.run();
         return;
@@ -309,7 +422,9 @@ export class LobbyScene extends Phaser.Scene {
 
     this.maybeCreateJoystick();
 
-    installPauseMenuEsc(this, { shouldBlockEsc: () => isDialogueOpen() });
+    installPauseMenuEsc(this, {
+      shouldBlockEsc: () => isDialogueOpen() || isMapOpen(),
+    });
 
     this.setupCollisionDebug();
   }
@@ -448,6 +563,27 @@ export class LobbyScene extends Phaser.Scene {
       else if (dy > 0) this.playerFacing = 'south';
     }
 
+    // Portal trigger — feet crossed the doorway threshold. Fire once,
+    // fade camera, redirect. Split logic: if ?ref= was present on entry,
+    // the LEFT half of the doorway returns to that ref; the RIGHT half
+    // always exits to the Vibe Jam 2026 portal. Without a ref, the whole
+    // doorway is the Vibe Jam exit. Gated behind isJamMode() — outside the
+    // jam context the doorway is decorative only (no redirect).
+    if (isJamMode()) {
+      const feetXNow = this.player.x;
+      const feetYNow = this.player.y + feetYOffset;
+      if (
+        !this.portalTriggered &&
+        feetYNow >= PORTAL_TRIGGER_Y &&
+        feetXNow >= DOORWAY_X_LEFT &&
+        feetXNow <= DOORWAY_X_RIGHT
+      ) {
+        const midX = (DOORWAY_X_LEFT + DOORWAY_X_RIGHT) / 2;
+        const useReturn = !!this.portalRefUrl && feetXNow < midX;
+        this.firePortal(useReturn ? this.portalRefUrl! : this.exitPortalUrl());
+      }
+    }
+
     // Y-sort the player against props (terminal, later NPCs). Depth = feet
     // y so a prop above the player renders behind, below-player renders in
     // front. Props themselves use their own feet y as their depth (set at
@@ -464,6 +600,9 @@ export class LobbyScene extends Phaser.Scene {
     this.updateNpcPrompts(feetX, feetY);
     if (this.terminalPromptText) {
       this.terminalPromptText.setVisible(this.isPlayerNearTerminal());
+    }
+    if (this.mapBoardPromptText) {
+      this.mapBoardPromptText.setVisible(this.isPlayerNearMapBoard());
     }
 
     // ----- Animation / texture sync -----
@@ -561,30 +700,255 @@ export class LobbyScene extends Phaser.Scene {
     return dx * dx + dy * dy <= this.TERMINAL_INTERACT_RANGE * this.TERMINAL_INTERACT_RANGE;
   }
 
+  /** Mirror of `isPlayerNearTerminal` for the map board hanging next to it. */
+  private isPlayerNearMapBoard(): boolean {
+    if (!this.mapBoardInteractPos || !this.player) return false;
+    const feetYOffset = this.player.displayHeight * 0.25;
+    const dx = this.player.x - this.mapBoardInteractPos.x;
+    const dy = this.player.y + feetYOffset - this.mapBoardInteractPos.y;
+    return dx * dx + dy * dy <= this.MAPBOARD_INTERACT_RANGE * this.MAPBOARD_INTERACT_RANGE;
+  }
+
   /**
    * Spawn every NPC in the Greenhouse. Add to `npcs` + register each
    * NPC's collision rect with the scene obstacles. Adding a new NPC
    * here is 3-5 lines; the NpcAgent class handles everything else.
    */
+  /**
+   * Drop a raised planter bed prop at the given feet position. Non-
+   * interactive decor; collision rect covers the visible wooden box
+   * (foliage overflow is non-blocking — reads as leaves you can brush
+   * past). Origin (0.5, 1) → y-sort depth = feetY, matching other
+   * props + the player.
+   */
+  /**
+   * Drop a small crate side table + a radio sitting on top of it.
+   * The radio is not its own physical prop — it piggybacks on the
+   * table's collision rect and gets a matching depth so it renders
+   * on top of the crate.
+   */
+  private spawnSideTableWithRadio(feetX: number, feetY: number, scale = 1): void {
+    // Side table — 90×90 native; content bbox (3, 0, 86, 89) = 83×89.
+    // Top-surface (the crate lid) is roughly the upper ~28px of the
+    // sprite, so in world coords the lid sits around feetY - 62*scale.
+    this.add
+      .image(feetX, feetY, 'lobby-sidetable')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY);
+    // Collision covers the whole visible crate footprint with a small
+    // margin on each side + a bit of south extension so the player
+    // stops in front of the table instead of merging into it.
+    const crateW = Math.round(80 * scale);
+    const crateH = Math.round(80 * scale);
+    const extendDown = 10;
+    const extendSides = 8;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - crateW / 2 - extendSides,
+        feetY - crateH,
+        crateW + extendSides * 2,
+        crateH + extendDown,
+      ),
+    );
+
+    // Radio on the lid. 120×120 native; 0.5 × scale keeps it crisp
+    // when the parent scale is 1 and shrinks proportionally otherwise.
+    // Its feet sit at the lid line so it visibly rests on the crate.
+    // Same depth as the table; added after so Phaser's creation-order
+    // tiebreak draws it on top.
+    const radioScale = 0.5 * scale;
+    const radioFeetY = feetY - Math.round(62 * scale);
+    this.add
+      .image(feetX, radioFeetY, 'lobby-radio')
+      .setOrigin(0.5, 1)
+      .setScale(radioScale)
+      .setDepth(feetY);
+  }
+
+  /**
+   * Drop the scavenger's workbench prop at the given feet position.
+   * Non-interactive decor. Sized to sit against the top-right diagonal
+   * wall, mirroring the terminal's top-left corner.
+   * rotation is in radians. Caveat: pixel art rotation through Phaser
+   * uses subpixel sampling, so any non-zero rotation will soften edges.
+   */
+  private spawnWorkbench(feetX: number, feetY: number, scale = 1, rotation = 0): void {
+    // Sprite is 142×142 native — VERTICAL (wall-oriented) bench with
+    // content bbox (38, 0, 104, 141) = 66×141, tall and narrow.
+    this.add
+      .image(feetX, feetY, 'lobby-workbench')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setRotation(rotation)
+      .setDepth(feetY);
+    const w = Math.round(66 * scale);
+    const h = Math.round(130 * scale);
+    const extendDown = 15;
+    const extendUp = 10;
+    const extendSides = 14;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - w / 2 - extendSides,
+        feetY - h - extendUp,
+        w + extendSides * 2,
+        h + extendUp + extendDown,
+      ),
+    );
+  }
+
+  /**
+   * Drop the communal table + stools prop at the given feet position.
+   * Non-interactive decor; collision rect covers the full table +
+   * nearest stools footprint so the player walks around the whole
+   * dining setup rather than clipping through the stools.
+   */
+  private spawnTable(feetX: number, feetY: number, scale = 1): void {
+    // Sprite is 142×142 native with content bbox (0, 8, 142, 133) —
+    // so nearly full-canvas. Round table with 4 stools around it.
+    this.add
+      .image(feetX, feetY, 'lobby-table')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY);
+    const w = Math.round(130 * scale);
+    const h = Math.round(100 * scale);
+    const extendDown = 12;
+    const extendUp = 20;
+    const extendSides = 20;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - w / 2 - extendSides,
+        feetY - h - extendUp,
+        w + extendSides * 2,
+        h + extendUp + extendDown,
+      ),
+    );
+  }
+
+  private spawnPlanter(feetX: number, feetY: number, scale = 0.7): void {
+    // Sprite is 194×194 native; content bbox (0, 34, 194, 160), so
+    // the visible image is 194×126 with the wood box in the bottom
+    // half. 0.5× is an integer divisor → clean nearest-neighbor
+    // downsample, no blur.
+    this.add
+      .image(feetX, feetY, 'lobby-planter-bed')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY);
+    // Collision covers the wood-box footprint AND extends a bit past
+    // every side — so the player can't squeak past the ends and
+    // stops a comfortable distance in front when approaching from
+    // below, reading as "standing next to it" rather than merged.
+    const w = Math.round(170 * scale);
+    const h = Math.round(44 * scale);
+    const extendDown = 20;
+    const extendUp = 45;
+    const extendSides = 24;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - w / 2 - extendSides,
+        feetY - h - extendUp,
+        w + extendSides * 2,
+        h + extendUp + extendDown,
+      ),
+    );
+  }
+
   private spawnNpcs(): void {
-    // Medic — test patrol on the right side of the room.
-    this.registerWalkAnims('medic');
-    const medic = new NpcAgent(this, {
-      classId: 'medic',
-      x: 1000,
-      y: 525,
-      patrolAxis: 'vertical',
-      patrolRange: 50,
-      speed: 50,
-      pauseMs: 1500,
-      recruitable: true,
+    // Skip spawning an NPC when the player IS that class — the player
+    // can't recruit themselves, and a duplicate of their sprite standing
+    // in the room reads as a glitch. Future: swap to a different class
+    // filling that slot instead of leaving the spot empty.
+    const playerIs = (classId: string) => this.leaderKey === classId;
+
+    // Dr. Vey — the escort. Non-recruitable, always present (only one
+    // escort exists for now and it's fixed to Dr. Vey; no way to swap
+    // escorts in the lobby yet). Stands south-facing just to the right
+    // of the map board so he's visible on the player's natural path
+    // from the doorway up toward the terminal. Stats + lore are passed
+    // explicitly since Dr. Vey isn't in CLASSES.
+    const drVey = new NpcAgent(this, {
+      classId: 'drvey',
+      x: 505,
+      y: 290,
+      initialFacing: 'south',
+      recruitable: false,
+      displayName: 'DR. VEY',
+      customStatLine: `HP 35`,
+      customLore:
+        "Scientist. Two months of field observations on AI patrol pattern shifts — the data the survivor network has been waiting on.",
       greetingLines: [
-        "Patch kit's topped off. You need a medic, I'm your medic.",
+        "My research has to reach the tower. Findings on AI patrol pattern shifts.",
+        "I've been trying to get this data to the Relay for two months. Don't let me die on this road.",
+        "Whenever you and your crew are ready, I'll be right behind you.",
+        "I can't make this walk alone. You say go, I go.",
       ],
-      alreadyRecruitedLines: ["Ready when you are. Let's not keep The Relay waiting."],
     });
-    this.npcs.push(medic);
-    this.obstacles.push(medic.collisionRect);
+    this.npcs.push(drVey);
+    this.obstacles.push(drVey.collisionRect);
+
+    // Medic — test patrol on the right side of the room.
+    if (!playerIs('medic')) {
+      this.registerWalkAnims('medic');
+      const medic = new NpcAgent(this, {
+        classId: 'medic',
+        x: 1000,
+        y: 525,
+        patrolAxis: 'vertical',
+        patrolRange: 50,
+        speed: 50,
+        pauseMs: 1500,
+        recruitable: true,
+        greetingLines: [
+          "Patch kit's topped off. You need a medic, I'm your medic.",
+          "Someone's gotta stitch you up when the drones start thinking. Might as well be me.",
+          "I brought the clinic with me in three bags. Say the word and they're on your back.",
+          "Three seasons of filters bought me this spot. I'm not sitting the run out.",
+        ],
+        alreadyRecruitedLines: [
+          "Ready when you are. Let's not keep the relay waiting.",
+          "Bags are packed, splints in the outer pocket. Whenever you call it.",
+          "Been doing mobility drills for a week. My knee won't quit on us this time.",
+        ],
+      });
+      this.npcs.push(medic);
+      this.obstacles.push(medic.collisionRect);
+    }
+
+    // Scavenger — stationary at the workbench, facing west so she
+    // reads as "working on the bench". No patrol. Plays the custom
+    // 9-frame Workbench animation on loop.
+    if (!playerIs('scavenger')) {
+      this.registerWalkAnims('scavenger');
+      const scavenger = new NpcAgent(this, {
+        classId: 'scavenger',
+        x: 200,
+        y: 560,
+        initialFacing: 'west',
+        // Force render above the workbench prop (feet_y=660 → depth 660).
+        depthOverride: 661,
+        recruitable: true,
+        idleAnim: {
+          textureKeyPrefix: 'scavenger-workbench-west',
+          frameCount: 9,
+          frameRate: 6,
+        },
+        greetingLines: [
+          "Pulled this board out of a dead car uplink yesterday. Still warm.",
+          "Stripped a tow rig last week. Still smelled like its driver.",
+          "If it ran on pre-fall current, I can hotwire it. Usually.",
+          "You want me on this run, say so. Otherwise I've got work.",
+        ],
+        alreadyRecruitedLines: [
+          "Almost done here. Give me one more pass.",
+          "Kit's sorted. Lock picks, cutter, two spare cells. Ready.",
+          "Just taping this together. I'll sling it and follow.",
+        ],
+      });
+      this.npcs.push(scavenger);
+      this.obstacles.push(scavenger.collisionRect);
+    }
   }
 
   /** Per-frame tick for every NPC. */
@@ -604,6 +968,112 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   /**
+   * Absolute URL of THIS deployed game, stripped of any query string so
+   * the next Vibe Jam destination can store a clean `ref` back to us.
+   */
+  private exitPortalUrl(): string {
+    const ourRef =
+      typeof window !== 'undefined'
+        ? window.location.origin + window.location.pathname
+        : '';
+    const def = CLASSES[this.leaderKey];
+    return buildPortalExitUrl({
+      ourRef,
+      leaderClassId: def?.personName ?? this.leaderKey,
+    });
+  }
+
+  /**
+   * Redirect the browser to the given portal URL. Sets the one-shot
+   * guard first so movement-loop ticks between now and navigation don't
+   * stack redirects. Kept tiny on purpose — the browser's own nav takes
+   * over visually.
+   */
+  private firePortal(url: string): void {
+    this.portalTriggered = true;
+    // Brief camera flash helps mask the navigation gap.
+    this.cameras.main.flash(250, 120, 220, 255);
+    // Defer the actual nav by one tick so the flash starts rendering.
+    this.time.delayedCall(120, () => {
+      if (typeof window !== 'undefined') window.location.href = url;
+    });
+  }
+
+  /**
+   * Draw the portal visuals on top of the doorway. Always renders the
+   * Vibe Jam exit portal (right half if a return portal is present,
+   * full width otherwise). If the player arrived via `?ref=<url>`, adds
+   * a return portal on the left half styled differently so they're
+   * visually distinguishable at a glance.
+   */
+  private drawPortals(): void {
+    // Outside jam mode (no ?jam=1 / ?portal=true): doorway is decorative,
+    // no portal overlay. Keeps the standalone build clean.
+    if (!isJamMode()) return;
+    const hasReturn = !!this.portalRefUrl;
+    const midX = (DOORWAY_X_LEFT + DOORWAY_X_RIGHT) / 2;
+
+    // Exit portal (Vibe Jam) — cyan/magenta pulse.
+    const exitLeftX = hasReturn ? midX : DOORWAY_X_LEFT;
+    this.paintPortalZone(
+      exitLeftX,
+      DOORWAY_Y_TOP,
+      DOORWAY_X_RIGHT - exitLeftX,
+      DOORWAY_Y_BOTTOM - DOORWAY_Y_TOP,
+      0xff66ff,
+      'VIBE JAM ▼',
+    );
+
+    if (hasReturn) {
+      this.paintPortalZone(
+        DOORWAY_X_LEFT,
+        DOORWAY_Y_TOP,
+        midX - DOORWAY_X_LEFT,
+        DOORWAY_Y_BOTTOM - DOORWAY_Y_TOP,
+        0x66ffcc,
+        'RETURN ▼',
+      );
+    }
+  }
+
+  /**
+   * Paint a single portal zone — label-only. The doorway opening in the
+   * bg art is already the visual cue; a floating label above it tells
+   * the player what walking through it does. Pulses on alpha so it
+   * reads as active without painting over the floor. Trigger logic
+   * lives in update().
+   */
+  private paintPortalZone(
+    x: number,
+    y: number,
+    w: number,
+    _h: number,
+    colorHex: number,
+    label: string,
+  ): void {
+    const labelY = y - 8;
+    const text = this.add
+      .text(x + w / 2, labelY, label, {
+        fontFamily: FONT,
+        fontSize: '22px',
+        color: '#ffffff',
+        stroke: `#${colorHex.toString(16).padStart(6, '0')}`,
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(99997);
+    // Matches the terminal's "▼ E" prompt bob — gentle 4px ping-pong.
+    this.tweens.add({
+      targets: text,
+      y: labelY - 4,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  /**
    * Render the Greenhouse background image, stretched to fill the world
    * via Phaser's nearest-neighbor scaling (pixelArt: true in Game config).
    */
@@ -613,16 +1083,6 @@ export class LobbyScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDisplaySize(WORLD_WIDTH, WORLD_HEIGHT)
       .setDepth(-100);
-
-    // Scene label (screen-fixed, not world-space).
-    this.add
-      .text(20, 20, 'GREENHOUSE — walkable', {
-        fontFamily: FONT,
-        fontSize: '18px',
-        color: '#aaaaaa',
-      })
-      .setScrollFactor(0)
-      .setDepth(1000);
   }
 
 }

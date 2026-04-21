@@ -144,7 +144,7 @@ export class CrewHud {
     // Primary identifier is the personal name (e.g. "KADE"); role
     // (e.g. "Vanguard") appears in parens after, smaller feel.
     const leaderLabel = leader
-      ? `${CLASSES[leader]?.personName.toUpperCase()} (${CLASSES[leader]?.name.toUpperCase()})`
+      ? (CLASSES[leader]?.personName.toUpperCase() ?? '')
       : '';
     const rows = [
       { tag: '[LEAD]', value: leaderLabel, color: '#ffcc66' },
@@ -170,7 +170,7 @@ export class CrewHud {
     if (!classId) return { tag: '[—]', value: 'EMPTY', color: '#4a8a6a' };
     const def = CLASSES[classId];
     const label = def
-      ? `${def.personName.toUpperCase()} (${def.name.toUpperCase()})`
+      ? def.personName.toUpperCase()
       : classId.toUpperCase();
     return { tag: '[R]', value: label, color: '#a6ffc6' };
   }

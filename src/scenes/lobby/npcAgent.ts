@@ -48,6 +48,32 @@ export interface NpcAgentConfig {
   greetingLines?: string[];
   /** Lines shown after the NPC has been recruited. */
   alreadyRecruitedLines?: string[];
+  /** Per-NPC sprite scale override. Defaults to the lobby's
+   *  DEFAULT_PLAYER_SCALE of 2.0 (matching the leader's visual size). */
+  spriteScale?: number;
+  /** Fixed depth override. When set, bypasses the default y-sort depth
+   *  so the NPC sprite can be forced to render above (or below) a
+   *  specific prop — e.g. the Scavenger stacked on top of the
+   *  workbench sprite regardless of their feet-y ordering. */
+  depthOverride?: number;
+  /** Optional custom idle animation (e.g. scavenger working at the
+   *  workbench). When set, the NPC plays this anim continuously
+   *  instead of showing the default static rotation — only meaningful
+   *  for stationary NPCs (patrolAxis unset/null). */
+  idleAnim?: {
+    /** Prefix for frame texture keys; frames are <prefix>-000, -001, ... */
+    textureKeyPrefix: string;
+    frameCount: number;
+    /** FPS for the anim. Defaults to 6 — slow/working tempo. */
+    frameRate?: number;
+  };
+  /** Override the auto-computed stat line in the dialogue modal. Use for
+   *  NPCs that aren't in CLASSES (e.g. Dr. Vey, whose stats differ from
+   *  a combat class — escort-only HP pool, no attack/MP). */
+  customStatLine?: string;
+  /** Override the lore blurb shown below the stat line. Use for NPCs
+   *  outside CLASSES. Defaults to CLASS_LORE_BLURBS[classId] when unset. */
+  customLore?: string;
 }
 
 type PatrolState =
@@ -96,9 +122,16 @@ export class NpcAgent {
       ...config,
     };
 
+    // Prefer the worldwalk frame-0 texture when the class has one (patrol
+    // classes — medic/scavenger/etc). Fall back to the plain rotation
+    // texture (`<classId>-<facing>`) for NPCs without a walking anim,
+    // like Dr. Vey / other static escort-style characters.
+    const walkKey = `${config.classId}-worldwalk-${this.cfg.initialFacing}-000`;
+    const staticKey = `${config.classId}-${this.cfg.initialFacing}`;
+    const initialTextureKey = scene.textures.exists(walkKey) ? walkKey : staticKey;
     this.sprite = scene.add
-      .sprite(config.x, config.y, `${config.classId}-worldwalk-${this.cfg.initialFacing}-000`)
-      .setScale(2.0);
+      .sprite(config.x, config.y, initialTextureKey)
+      .setScale(config.spriteScale ?? 2.0);
 
     // Collision rect = sprite base (where feet plant). Narrow + short
     // so the player can pass behind the NPC's head visually without
@@ -132,6 +165,22 @@ export class NpcAgent {
     // walking into the player's line of sight.
     this.state = 'paused-forward';
     this.stateUntil = scene.time.now + this.cfg.pauseMs;
+
+    // Custom idle animation (e.g. scavenger working at the workbench).
+    // Register the anim on the scene (idempotent) and start playing it.
+    // Only makes sense for stationary NPCs — the patrol loop would
+    // fight with the anim if both ran.
+    if (config.idleAnim) {
+      const { textureKeyPrefix, frameCount, frameRate = 6 } = config.idleAnim;
+      const animKey = `${config.classId}-${textureKeyPrefix}`;
+      if (!scene.anims.exists(animKey)) {
+        const frames = Array.from({ length: frameCount }, (_, i) => ({
+          key: `${textureKeyPrefix}-${i.toString().padStart(3, '0')}`,
+        }));
+        scene.anims.create({ key: animKey, frames, frameRate, repeat: -1 });
+      }
+      this.sprite.play(animKey);
+    }
   }
 
   get collisionRect(): Phaser.Geom.Rectangle {
@@ -174,7 +223,9 @@ export class NpcAgent {
       this.tickPatrol(delta);
     }
     // Y-sort against player + props.
-    this.sprite.setDepth(this.sprite.y + this.sprite.displayHeight * 0.25);
+    this.sprite.setDepth(
+      this.cfg.depthOverride ?? this.sprite.y + this.sprite.displayHeight * 0.25,
+    );
 
     // Collision rect follows the sprite's feet — updated in place so
     // the reference held by the scene's obstacles array stays current.
@@ -190,7 +241,7 @@ export class NpcAgent {
     // every class. Small time-based sine bob so it feels alive.
     const bob = Math.sin(this.scene.time.now / 160) * 2;
     const headY = this.sprite.y - this.sprite.displayHeight * 0.25;
-    this.prompt.setPosition(this.sprite.x, headY - 16 + bob);
+    this.prompt.setPosition(this.sprite.x, headY - 28 + bob);
   }
 
   private tickPatrol(delta: number): void {
@@ -291,6 +342,8 @@ export class NpcAgent {
     const isLeader = lobby.leaderId === this.classId;
     const portraitKey = `${this.classId}-south`;
     const portraitClassId = this.classId;
+    const statLine = this.cfg.customStatLine;
+    const loreLine = this.cfg.customLore;
 
     // Leaders can't be "recruited" — short-circuit to a different line.
     if (isLeader) {
@@ -298,6 +351,8 @@ export class NpcAgent {
         name: this.displayName,
         portraitKey,
         portraitClassId,
+        statLine,
+        loreLine,
         text: 'You told me to lead. Just say the word and we move.',
         options: [{ label: '[E] CLOSE', key: 'E', action: () => closeDialogue() }],
       });
@@ -314,6 +369,8 @@ export class NpcAgent {
         name: this.displayName,
         portraitKey,
         portraitClassId,
+        statLine,
+        loreLine,
         text,
         options: [{ label: '[E] CLOSE', key: 'E', action: () => closeDialogue() }],
       });
@@ -332,6 +389,8 @@ export class NpcAgent {
       name: this.displayName,
       portraitKey,
       portraitClassId,
+      statLine,
+      loreLine,
       text,
       options: [
         {
@@ -392,6 +451,10 @@ interface DialogueConfig {
   /** Class id used to look up the head-crop rectangle — so the portrait
    *  shows only the character's face, not their whole body. */
   portraitClassId?: string;
+  /** Override the auto-computed stat line. Shown verbatim when set. */
+  statLine?: string;
+  /** Override the lore blurb below the stat line. */
+  loreLine?: string;
 }
 
 interface ActiveDialogue {
@@ -545,14 +608,21 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
     .setScrollFactor(0);
   container.add(body_);
 
-  // Stat line below the body text (if the dialogue is for a known
-  // class). Terminal-styled as `> STATS HP xx SPD yy MP zz`.
+  // Stat line below the body text. Prefers an explicit override from
+  // the config (non-class NPCs like Dr. Vey), otherwise auto-computes
+  // from CLASSES. Terminal-styled as `HP xx ATK yy ...`.
   let lastBottom = body_.y + body_.displayHeight;
-  if (config.portraitClassId && CLASSES[config.portraitClassId]) {
-    const def = CLASSES[config.portraitClassId];
-    const statLine = `HP ${def.hp}   ATK ${def.attack}   DEF ${def.defense}   SPD ${def.speed}${def.mp > 0 ? `   MP ${def.mp}` : ''}`;
+  const resolvedStatLine =
+    config.statLine ??
+    (config.portraitClassId && CLASSES[config.portraitClassId]
+      ? (() => {
+          const def = CLASSES[config.portraitClassId];
+          return `HP ${def.hp}   ATK ${def.attack}   DEF ${def.defense}   SPD ${def.speed}${def.mp > 0 ? `   MP ${def.mp}` : ''}`;
+        })()
+      : null);
+  if (resolvedStatLine) {
     const stats = scene.add
-      .text(nameX, lastBottom + 14, statLine, {
+      .text(nameX, lastBottom + 14, resolvedStatLine, {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#6aaa8a',
@@ -563,12 +633,15 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
     lastBottom = stats.y + stats.displayHeight;
   }
 
-  // Lore blurb — one-line worldbuilding/backstory flavor shown below
-  // the stats. Dim-colored so it reads as supplementary to the
-  // NPC's in-the-moment greeting above.
-  if (config.portraitClassId && CLASS_LORE_BLURBS[config.portraitClassId]) {
+  // Lore blurb — prefers an explicit config.loreLine, otherwise falls
+  // back to CLASS_LORE_BLURBS[classId]. Dim-colored so it reads as
+  // supplementary to the NPC's in-the-moment greeting above.
+  const resolvedLore =
+    config.loreLine ??
+    (config.portraitClassId ? CLASS_LORE_BLURBS[config.portraitClassId] : undefined);
+  if (resolvedLore) {
     const lore = scene.add
-      .text(nameX, lastBottom + 12, CLASS_LORE_BLURBS[config.portraitClassId], {
+      .text(nameX, lastBottom + 12, resolvedLore, {
         fontFamily: FONT,
         fontSize: '14px',
         color: '#4a8a6a',

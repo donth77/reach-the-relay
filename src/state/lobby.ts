@@ -2,7 +2,8 @@
 // up until `startRun` is called (after which run state owns the party).
 //
 // This is module-scoped (not a scene singleton) so the data survives
-// scene transitions (LeaderSelect → Lobby → Route) without serialization.
+// scene transitions (LeaderSelect → Lobby → PartySelect / PartySelectTerminal
+// → Route) without serialization.
 
 export interface LobbyPlayerPose {
   x: number;
