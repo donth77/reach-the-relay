@@ -1,6 +1,6 @@
 import type { Element } from './classes';
 
-export type EnemyBehavior = 'random' | 'target-escort' | 'multi-hit' | 'prefer-low-hp';
+export type EnemyBehavior = 'random' | 'target-vip' | 'multi-hit' | 'prefer-low-hp';
 export type EnemyType = 'robotic' | 'hybrid';
 
 export interface EnemyDef {
@@ -27,7 +27,7 @@ export interface EnemyDef {
   // If true, this enemy ignores GUARD redirect (still respects TAUNT).
   ignoresGuard?: boolean;
   // Boss-only: an AoE elemental slam on every other turn that hits all party
-  // members (escort exempt). Uses a dedicated animation key.
+  // members (VIP exempt). Uses a dedicated animation key.
   signatureAoE?: {
     element: Element;
     animKey: string; // e.g. 'wreckwarden-attack-coolant-east'
@@ -107,10 +107,10 @@ export const ENEMIES: Record<string, EnemyDef> = {
     type: 'hybrid',
     vulnerability: 'surge',
     resistances: ['thermal'],
-    behavior: 'target-escort',
+    behavior: 'target-vip',
     attackSfxKey: 'sfx-wirehead-attack',
     description:
-      "Former human, wired into the Censor's grid. Hunts NPCs — always targets the escort. Cybernetic skin laughs off flame; the implant in its skull can't take a current spike.",
+      "Former human, wired into the Censor's grid. Hunts NPCs — always targets the VIP. Cybernetic skin laughs off flame; the implant in its skull can't take a current spike.",
   },
   scoutdrone: {
     id: 'scoutdrone',
@@ -161,7 +161,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     type: 'robotic',
     vulnerability: 'none',
     resistances: ['thermal', 'coolant'],
-    behavior: 'target-escort',
+    behavior: 'target-vip',
     ignoresGuard: true,
     signatureAoE: {
       element: 'coolant',
@@ -177,7 +177,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     bossMusicKey: 'music-route-substation-boss',
     attackSfxKey: 'sfx-wreckwarden-attack',
     description:
-      'Apex Censor enforcer — a tower of welded warbot plating. Ignores GUARD and TAUNT on its Shockwave and coolant slam, hunts the escort, and vents cryogenic AoE at the whole party. Armor and coolant systems shrug off heat and cold alike.',
+      'Apex Censor enforcer — a tower of welded warbot plating. Ignores GUARD and TAUNT on its Shockwave and coolant slam, hunts the VIP, and vents cryogenic AoE at the whole party. Armor and coolant systems shrug off heat and cold alike.',
   },
 };
 

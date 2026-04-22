@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Replace <your-domain> when deploying to a custom domain.
+# On itch.io (<username>.itch.io/reach-the-relay) this file still ships inside
+# the game iframe and is harmless — real SEO is driven by the itch.io listing.
+Sitemap: https://reachtherelay.example.com/sitemap.xml

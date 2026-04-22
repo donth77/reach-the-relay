@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Reach the Relay — post-AI escort RPG for Vibe Jam 2026",
+  "description": "Reach the Relay — post-AI VIP-protection RPG for Vibe Jam 2026",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

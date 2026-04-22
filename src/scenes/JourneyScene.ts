@@ -23,7 +23,7 @@ const TRIANGLE_POSITIONS = [
   { x: -38, y: 20 }, // slot 1 — back-left
   { x: 38, y: 20 }, // slot 2 — back-right
 ];
-const ESCORT_OFFSET = { x: 0, y: 62 };
+const VIP_OFFSET = { x: 0, y: 62 };
 const MARKER_TWEEN_MS = 1600;
 const FADE_IN_MS = 220;
 const FADE_OUT_MS = 220;
@@ -311,7 +311,7 @@ export class JourneyScene extends Phaser.Scene {
 
     const markerContainer = this.add.container(startPos.x, startPos.y - 36);
     // Show each party member as a head-portrait in a compact triangle, with
-    // the escort (Dr. Vey) tucked below the group. Origin is adjusted so the
+    // the VIP (Dr. Vey) tucked below the group. Origin is adjusted so the
     // crop rectangle centers on the sprite's position — per-class crops
     // handle the different canvas sizes (Vanguard 96, Medic 104, others 68).
     const makeHeadSprite = (classKey: string, x: number, y: number) => {
@@ -328,15 +328,15 @@ export class JourneyScene extends Phaser.Scene {
     };
 
     // Back row first (painted under), then the lead (painted on top — lowest y).
-    // Escort added last so they render above anything they overlap below.
+    // VIP added last so they render above anything they overlap below.
     for (const slotIdx of [1, 2, 0]) {
       const classKey = run.party[slotIdx];
       if (!classKey) continue;
       const pos = TRIANGLE_POSITIONS[slotIdx];
       makeHeadSprite(classKey, pos.x, pos.y);
     }
-    // Escort (Dr. Vey) tucked below the triangle — "party leads, escort follows."
-    makeHeadSprite('drvey', ESCORT_OFFSET.x, ESCORT_OFFSET.y);
+    // VIP (Dr. Vey) tucked below the triangle — "party leads, VIP follows."
+    makeHeadSprite('drvey', VIP_OFFSET.x, VIP_OFFSET.y);
 
     // Subtle y-bob on the container so the sprites feel like they're walking.
     this.tweens.add({

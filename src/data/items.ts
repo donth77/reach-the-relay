@@ -1,4 +1,4 @@
-export type ItemTargetType = 'ally-or-escort' | 'ko-ally' | 'caster' | 'all-enemies';
+export type ItemTargetType = 'ally-or-vip' | 'ko-ally' | 'caster' | 'all-enemies';
 
 export type ItemEffectKind = 'heal' | 'restore-mp' | 'revive' | 'smoke-miss';
 
@@ -16,7 +16,7 @@ export const ITEMS: Record<string, ItemDef> = {
     id: 'stimpak',
     label: 'STIMPAK',
     description: 'Restore 25 HP to one ally or Dr. Vey.',
-    target: 'ally-or-escort',
+    target: 'ally-or-vip',
     effect: 'heal',
     power: 25,
   },

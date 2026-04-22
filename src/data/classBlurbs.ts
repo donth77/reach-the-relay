@@ -13,7 +13,7 @@ export const CLASS_ROLE_BLURBS: Record<string, string> = {
   netrunner:
     'Signal-jamming caster. Overloads circuits with thermal, electric, and coolant packets. Fragile, but the only one who can crack hardened targets.',
   medic:
-    'Field technician. PATCH keeps the escort upright; PULSE shreds robotics; STIM rushes a teammate back into the fight.',
+    'Field technician. PATCH keeps the VIP upright; PULSE shreds robotics; STIM rushes a teammate back into the fight.',
   scavenger:
     'Salvage artist. Critical hits and a chance to pull items off downed enemies. Thrives on quick, dirty engagements.',
   cybermonk:

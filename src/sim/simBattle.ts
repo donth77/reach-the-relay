@@ -7,13 +7,13 @@ import { ENEMIES, type EnemyDef } from '../data/enemies';
 
 // Match src/combat/types.ts
 const ATB_MAX = 100;
-const ATB_RATE = 9;
-const ESCORT_MAX_HP = 35;
+const ATB_RATE = 10;
+const VIP_MAX_HP = 35;
 
 export interface SimUnit {
   id: string;
   name: string;
-  side: 'party' | 'enemy' | 'escort';
+  side: 'party' | 'enemy' | 'vip';
   hp: number;
   maxHp: number;
   mp: number;
@@ -56,7 +56,7 @@ export interface RouteEncounter {
   enemyOverrides?: Partial<Pick<EnemyDef, 'hp' | 'attack' | 'defense' | 'speed'>>; // applied to the boss-tier enemy if present
   isBoss?: boolean; // marks boss for win-reporting (bossWon stat)
   // When true, the rest stop IMMEDIATELY before this encounter performs
-  // a full HP/MP/escort restore (mirrors the game's `isBoss` flag in
+  // a full HP/MP/vip restore (mirrors the game's `isBoss` flag in
   // routes.ts, but decoupled from win-reporting so a rest-scenario can
   // be tweaked without affecting the boss-win metric).
   fullPreRest?: boolean;
@@ -75,7 +75,7 @@ export interface RouteResult {
   bossWon: boolean; // specifically whether the boss encounter resolved in win
   simSeconds: number;
   turns: number;
-  escortHpEnd: number;
+  vipHpEnd: number;
   partyKoCount: number;
   partyHpEndPct: number;
   itemsUsed: Record<string, number>;
@@ -85,8 +85,8 @@ export interface SimResult {
   win: boolean;
   simSeconds: number;
   turns: number;
-  escortHpEnd: number;
-  escortHpStart: number;
+  vipHpEnd: number;
+  vipHpStart: number;
   enemyHpEnd: number;
   partyKoCount: number;
   partyHpEndPct: number; // avg 0..1
@@ -97,8 +97,8 @@ export interface SimStats {
   trials: number;
   winRate: number;
   avgTurns: number;
-  avgEscortHpEnd: number;
-  escortKoRate: number;
+  avgVipHpEnd: number;
+  vipKoRate: number;
   avgPartyKo: number;
   avgPartyHpEndPct: number;
   avgItemsUsed: Record<string, number>;
@@ -199,18 +199,18 @@ function buildEnemy(def: EnemyDef): SimUnit {
   };
 }
 
-function buildEscort(): SimUnit {
+function buildVip(): SimUnit {
   return {
     id: 'drvey',
     name: 'Dr. Vey',
-    side: 'escort',
-    hp: ESCORT_MAX_HP,
-    maxHp: ESCORT_MAX_HP,
+    side: 'vip',
+    hp: VIP_MAX_HP,
+    maxHp: VIP_MAX_HP,
     mp: 0,
     maxMp: 0,
     attack: 0,
     defense: 0,
-    speed: 0, // escort never acts in ATB
+    speed: 0, // vip never acts in ATB
     atb: 0,
     atbModifier: 1,
     atbModifierTurnsLeft: 0,
@@ -253,15 +253,15 @@ function pickPartyAction(
   u: SimUnit,
   allies: SimUnit[],
   enemies: SimUnit[],
-  escort: SimUnit,
+  vip: SimUnit,
   inventory: Record<string, number>,
 ): Action {
   if (!u.classDef) return null;
   if (enemies.length === 0) return null;
   const byId = (id: string) => u.classDef!.abilities.find((a) => a.id === id);
   const wounded = allies.filter((a) => !a.ko && a.hp <= a.maxHp * 0.4);
-  const escortWounded = !escort.ko && escort.hp <= escort.maxHp * 0.5;
-  const escortCritical = !escort.ko && escort.hp <= escort.maxHp * 0.3;
+  const vipWounded = !vip.ko && vip.hp <= vip.maxHp * 0.5;
+  const vipCritical = !vip.ko && vip.hp <= vip.maxHp * 0.3;
   const hasMedic = allies.some((a) => !a.ko && a.classDef?.id === 'medic');
   const medic = allies.find((a) => !a.ko && a.classDef?.id === 'medic');
   const medicCanPatch = !!(medic && medic.mp >= 4);
@@ -287,9 +287,9 @@ function pickPartyAction(
     }
   }
 
-  // 3. Stimpak on critical escort — fallback when Medic can't PATCH
-  if (escortCritical && (inventory.stimpak ?? 0) > 0 && (!medicCanPatch || isMedic === false)) {
-    return { kind: 'item', itemId: 'stimpak', target: escort };
+  // 3. Stimpak on critical vip — fallback when Medic can't PATCH
+  if (vipCritical && (inventory.stimpak ?? 0) > 0 && (!medicCanPatch || isMedic === false)) {
+    return { kind: 'item', itemId: 'stimpak', target: vip };
   }
 
   // 4. Stimpak on any party member below 30% HP when Medic can't reach them this turn
@@ -300,19 +300,19 @@ function pickPartyAction(
     }
   }
 
-  // 5. Stimpak on wounded escort when no Medic in party (no healer, use items)
-  if (escortWounded && (inventory.stimpak ?? 0) > 0 && !hasMedic) {
-    return { kind: 'item', itemId: 'stimpak', target: escort };
+  // 5. Stimpak on wounded vip when no Medic in party (no healer, use items)
+  if (vipWounded && (inventory.stimpak ?? 0) > 0 && !hasMedic) {
+    return { kind: 'item', itemId: 'stimpak', target: vip };
   }
 
   // Smarter primary target selection:
-  //  1. Any enemy with target-escort behavior (Wirehead, Wreckwarden) — priority kill
+  //  1. Any enemy with target-vip behavior (Wirehead, Wreckwarden) — priority kill
   //  2. Lowest-HP enemy to reduce enemy count
   //  3. First enemy in array (fallback)
-  const escortHunters = enemies.filter((e) => e.enemyDef?.behavior === 'target-escort');
+  const vipHunters = enemies.filter((e) => e.enemyDef?.behavior === 'target-vip');
   const primary: SimUnit =
-    escortHunters.length > 0
-      ? escortHunters.reduce((acc, e) => (e.hp < acc.hp ? e : acc))
+    vipHunters.length > 0
+      ? vipHunters.reduce((acc, e) => (e.hp < acc.hp ? e : acc))
       : enemies.reduce((acc, e) => (e.hp < acc.hp ? e : acc));
 
   switch (u.classDef.id) {
@@ -322,20 +322,20 @@ function pickPartyAction(
       const pulse = byId('pulse');
       const strike = byId('strike');
 
-      if (escortWounded && patch && canUseAbility(u, patch))
-        return { kind: 'ability', ability: patch, target: escort };
+      if (vipWounded && patch && canUseAbility(u, patch))
+        return { kind: 'ability', ability: patch, target: vip };
       if (wounded.length > 0 && patch && canUseAbility(u, patch)) {
         const pick = [...wounded].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
         return { kind: 'ability', ability: patch, target: pick };
       }
       if (
-        !escort.ko &&
-        escort.hp <= escort.maxHp * 0.7 &&
-        !escort.shielded &&
+        !vip.ko &&
+        vip.hp <= vip.maxHp * 0.7 &&
+        !vip.shielded &&
         shield &&
         canUseAbility(u, shield)
       ) {
-        return { kind: 'ability', ability: shield, target: escort };
+        return { kind: 'ability', ability: shield, target: vip };
       }
       if (pulse && canUseAbility(u, pulse))
         return { kind: 'ability', ability: pulse, target: primary };
@@ -371,17 +371,11 @@ function pickPartyAction(
       const fight = byId('fight');
       const taunt = byId('taunt');
       const guard = byId('guard');
-      // TAUNT when escort is hurting AND the enemy isn't about to AoE (turnCount % 3 === 2 = next is AoE)
+      // TAUNT when vip is hurting AND the enemy isn't about to AoE (turnCount % 3 === 2 = next is AoE)
       const bossTurn = primary.turnCount % 3;
       const nextIsAoE =
         primary.enemyDef?.shockwave && primary.enemyDef?.signatureAoE ? bossTurn === 2 : false;
-      if (
-        !escort.ko &&
-        escort.hp <= escort.maxHp * 0.5 &&
-        taunt &&
-        canUseAbility(u, taunt) &&
-        !nextIsAoE
-      ) {
+      if (!vip.ko && vip.hp <= vip.maxHp * 0.5 && taunt && canUseAbility(u, taunt) && !nextIsAoE) {
         return { kind: 'ability', ability: taunt, target: primary };
       }
       // GUARD when vanguard healthy, party under fire, enemy has no ignoresGuard
@@ -390,8 +384,8 @@ function pickPartyAction(
         guard &&
         canUseAbility(u, guard) &&
         !primary.enemyDef?.ignoresGuard &&
-        !escort.ko &&
-        escort.hp <= escort.maxHp * 0.7
+        !vip.ko &&
+        vip.hp <= vip.maxHp * 0.7
       ) {
         return { kind: 'ability', ability: guard, target: u };
       }
@@ -489,8 +483,8 @@ function executeParty(
       break;
     }
     case 'boost': {
-      target.atbModifier = 2;
-      target.atbModifierTurnsLeft = 1;
+      // AMP grants immediate free turn — fills target's ATB to max.
+      target.atb = ATB_MAX;
       break;
     }
     case 'shield-buff': {
@@ -552,8 +546,8 @@ function pickShockwaveTarget(enemy: SimUnit, living: SimUnit[], rng: RNG): SimUn
 
 function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
   const party = all.filter((u) => u.side === 'party' && !u.ko);
-  const escort = all.find((u) => u.side === 'escort' && !u.ko);
-  if (party.length === 0 && !escort) return;
+  const vip = all.find((u) => u.side === 'vip' && !u.ko);
+  if (party.length === 0 && !vip) return;
 
   enemy.turnCount += 1;
 
@@ -597,9 +591,9 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
     }
   }
 
-  // Multi-hit enemies (Nanite Swarm) hit the whole party + escort at 0.85× power.
+  // Multi-hit enemies (Nanite Swarm) hit the whole party + vip at 0.85× power.
   if (enemy.enemyDef?.behavior === 'multi-hit') {
-    const targets = [...party, ...(escort ? [escort] : [])];
+    const targets = [...party, ...(vip ? [vip] : [])];
     for (const t of targets) {
       const dmg = calcDamage(enemy, t, 0.85, undefined, rng);
       applyDamage(t, dmg);
@@ -615,9 +609,9 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
   }
   if (!target) {
     const behavior = enemy.enemyDef?.behavior ?? 'random';
-    if (behavior === 'target-escort' && escort) target = escort;
+    if (behavior === 'target-vip' && vip) target = vip;
     else if (behavior === 'prefer-low-hp') {
-      const pool = [...party, ...(escort ? [escort] : [])];
+      const pool = [...party, ...(vip ? [vip] : [])];
       const weights = pool.map((p) => 1 + 2 * Math.max(0, 1 - p.hp / p.maxHp));
       const tot = weights.reduce((a, b) => a + b, 0);
       let r = rng() * tot;
@@ -630,7 +624,7 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
       }
       target ??= pool[pool.length - 1];
     } else {
-      const pool = [...party, ...(escort ? [escort] : [])];
+      const pool = [...party, ...(vip ? [vip] : [])];
       target = pool[Math.floor(rng() * pool.length)];
     }
   }
@@ -668,8 +662,8 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
     const def: EnemyDef = isLast ? { ...base, ...(config.enemyOverrides ?? {}) } : { ...base };
     return buildEnemy(def);
   });
-  const escort = buildEscort();
-  const all: SimUnit[] = [...party, ...enemies, escort];
+  const vip = buildVip();
+  const all: SimUnit[] = [...party, ...enemies, vip];
   const inventory: Record<string, number> = {
     stimpak: 0,
     powercell: 0,
@@ -678,7 +672,7 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
     ...(config.startingInventory ?? {}),
   };
   const itemsUsed: Record<string, number> = {};
-  const escortHpStart = escort.hp;
+  const vipHpStart = vip.hp;
   const primaryEnemy = enemies[enemies.length - 1];
 
   let simSeconds = 0;
@@ -688,40 +682,13 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
   while (turns < MAX_TURNS) {
     // End conditions
     if (enemies.every((e) => e.ko))
-      return buildResult(
-        true,
-        simSeconds,
-        turns,
-        escort,
-        escortHpStart,
-        primaryEnemy,
-        party,
-        itemsUsed,
-      );
-    if (escort.ko)
-      return buildResult(
-        false,
-        simSeconds,
-        turns,
-        escort,
-        escortHpStart,
-        primaryEnemy,
-        party,
-        itemsUsed,
-      );
+      return buildResult(true, simSeconds, turns, vip, vipHpStart, primaryEnemy, party, itemsUsed);
+    if (vip.ko)
+      return buildResult(false, simSeconds, turns, vip, vipHpStart, primaryEnemy, party, itemsUsed);
     if (party.every((p) => p.ko))
-      return buildResult(
-        false,
-        simSeconds,
-        turns,
-        escort,
-        escortHpStart,
-        primaryEnemy,
-        party,
-        itemsUsed,
-      );
+      return buildResult(false, simSeconds, turns, vip, vipHpStart, primaryEnemy, party, itemsUsed);
 
-    // Advance time to next full-ATB actor. Units with speed 0 (escort) never act.
+    // Advance time to next full-ATB actor. Units with speed 0 (vip) never act.
     const candidates = all.filter((u) => !u.ko && u.speed > 0);
     if (candidates.length === 0) break;
 
@@ -767,7 +734,7 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
         next,
         party,
         all.filter((u) => u.side === 'enemy' && !u.ko),
-        escort,
+        vip,
         inventory,
       );
       executeParty(next, action, all, inventory, itemsUsed, rng);
@@ -782,16 +749,7 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
     next.atb = 0;
   }
 
-  return buildResult(
-    false,
-    simSeconds,
-    turns,
-    escort,
-    escortHpStart,
-    primaryEnemy,
-    party,
-    itemsUsed,
-  );
+  return buildResult(false, simSeconds, turns, vip, vipHpStart, primaryEnemy, party, itemsUsed);
 }
 
 // ========= Route simulation (multi-encounter) =========
@@ -799,7 +757,7 @@ export function simulate(config: SimConfig, rngSeed?: number): SimResult {
 export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResult {
   const rng: RNG = rngSeed !== undefined ? mulberry32(rngSeed) : Math.random;
   const party = buildParty(config.partyClassIds, false);
-  const escort = buildEscort();
+  const vip = buildVip();
   const inventory: Record<string, number> = {
     stimpak: 0,
     powercell: 0,
@@ -833,8 +791,8 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
       p.atbModifier = 1;
       p.atbModifierTurnsLeft = 0;
     }
-    const all: SimUnit[] = [...party, ...enemies, escort];
-    const result = runEncounter(all, party, enemies, escort, inventory, itemsUsed, rng);
+    const all: SimUnit[] = [...party, ...enemies, vip];
+    const result = runEncounter(all, party, enemies, vip, inventory, itemsUsed, rng);
     totalSeconds += result.seconds;
     totalTurns += result.turns;
     if (!result.win) {
@@ -844,7 +802,7 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
         bossWon: enc.isBoss ? false : bossWon,
         simSeconds: totalSeconds,
         turns: totalTurns,
-        escortHpEnd: escort.hp,
+        vipHpEnd: vip.hp,
         partyKoCount: party.filter((p) => p.ko).length,
         partyHpEndPct:
           party.reduce((acc, p) => acc + p.hp / p.maxHp, 0) / Math.max(1, party.length),
@@ -866,7 +824,7 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
       const preBoss = next?.fullPreRest === true;
       const hpPct = preBoss ? 1.0 : 0.5;
       const mpPct = preBoss ? 1.0 : 0.5;
-      const escortPct = preBoss ? 1.0 : 0.15;
+      const vipPct = preBoss ? 1.0 : 0.15;
       for (const p of party) {
         if (p.ko) p.hp = preBoss ? p.maxHp : Math.max(1, Math.round(p.maxHp * 0.25));
         else p.hp = Math.min(p.maxHp, Math.round(p.hp + p.maxHp * hpPct));
@@ -879,7 +837,7 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
           }
         }
       }
-      escort.hp = Math.min(escort.maxHp, Math.round(escort.hp + escort.maxHp * escortPct));
+      vip.hp = Math.min(vip.maxHp, Math.round(vip.hp + vip.maxHp * vipPct));
     }
   }
 
@@ -889,7 +847,7 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
     bossWon,
     simSeconds: totalSeconds,
     turns: totalTurns,
-    escortHpEnd: escort.hp,
+    vipHpEnd: vip.hp,
     partyKoCount: party.filter((p) => p.ko).length,
     partyHpEndPct: party.reduce((acc, p) => acc + p.hp / p.maxHp, 0) / Math.max(1, party.length),
     itemsUsed,
@@ -901,7 +859,7 @@ function runEncounter(
   all: SimUnit[],
   party: SimUnit[],
   enemies: SimUnit[],
-  escort: SimUnit,
+  vip: SimUnit,
   inventory: Record<string, number>,
   itemsUsed: Record<string, number>,
   rng: RNG,
@@ -912,7 +870,7 @@ function runEncounter(
 
   while (turns < MAX_TURNS) {
     if (enemies.every((e) => e.ko)) return { win: true, seconds, turns };
-    if (escort.ko) return { win: false, seconds, turns };
+    if (vip.ko) return { win: false, seconds, turns };
     if (party.every((p) => p.ko)) return { win: false, seconds, turns };
 
     const candidates = all.filter((u) => !u.ko && u.speed > 0);
@@ -954,7 +912,7 @@ function runEncounter(
         next,
         party,
         all.filter((u) => u.side === 'enemy' && !u.ko),
-        escort,
+        vip,
         inventory,
       );
       executeParty(next, action, all, inventory, itemsUsed, rng);
@@ -975,18 +933,18 @@ export interface RouteStats {
   routeWinRate: number;
   bossWinRate: number;
   avgEncountersCleared: number;
-  avgEscortHpEnd: number;
+  avgVipHpEnd: number;
   avgPartyHpEndPct: number;
   avgItemsUsed: Record<string, number>;
-  escortKoRate: number;
+  vipKoRate: number;
 }
 
 export function runRouteTrials(config: RouteConfig, trials: number): RouteStats {
   let routeWins = 0;
   let bossWins = 0;
   let encountersSum = 0;
-  let escortHpSum = 0;
-  let escortKos = 0;
+  let vipHpSum = 0;
+  let vipKos = 0;
   let hpPctSum = 0;
   const itemsUsedSum: Record<string, number> = {};
   for (let i = 0; i < trials; i++) {
@@ -994,8 +952,8 @@ export function runRouteTrials(config: RouteConfig, trials: number): RouteStats 
     if (r.routeWon) routeWins++;
     if (r.bossWon) bossWins++;
     encountersSum += r.encountersCleared;
-    escortHpSum += r.escortHpEnd;
-    if (r.escortHpEnd <= 0) escortKos++;
+    vipHpSum += r.vipHpEnd;
+    if (r.vipHpEnd <= 0) vipKos++;
     hpPctSum += r.partyHpEndPct;
     for (const [k, v] of Object.entries(r.itemsUsed)) {
       itemsUsedSum[k] = (itemsUsedSum[k] ?? 0) + v;
@@ -1008,8 +966,8 @@ export function runRouteTrials(config: RouteConfig, trials: number): RouteStats 
     routeWinRate: routeWins / trials,
     bossWinRate: bossWins / trials,
     avgEncountersCleared: encountersSum / trials,
-    avgEscortHpEnd: escortHpSum / trials,
-    escortKoRate: escortKos / trials,
+    avgVipHpEnd: vipHpSum / trials,
+    vipKoRate: vipKos / trials,
     avgPartyHpEndPct: hpPctSum / trials,
     avgItemsUsed,
   };
@@ -1019,8 +977,8 @@ function buildResult(
   win: boolean,
   simSeconds: number,
   turns: number,
-  escort: SimUnit,
-  escortHpStart: number,
+  vip: SimUnit,
+  vipHpStart: number,
   enemy: SimUnit,
   party: SimUnit[],
   itemsUsed: Record<string, number>,
@@ -1029,8 +987,8 @@ function buildResult(
     win,
     simSeconds,
     turns,
-    escortHpEnd: escort.hp,
-    escortHpStart,
+    vipHpEnd: vip.hp,
+    vipHpStart,
     enemyHpEnd: enemy.hp,
     partyKoCount: party.filter((p) => p.ko).length,
     partyHpEndPct: party.reduce((acc, p) => acc + p.hp / p.maxHp, 0) / Math.max(1, party.length),
@@ -1041,8 +999,8 @@ function buildResult(
 export function runTrials(config: SimConfig, trials: number): SimStats {
   let wins = 0;
   let turnsSum = 0;
-  let escortHpSum = 0;
-  let escortKos = 0;
+  let vipHpSum = 0;
+  let vipKos = 0;
   let partyKoSum = 0;
   let hpPctSum = 0;
   const itemsUsedSum: Record<string, number> = {};
@@ -1050,8 +1008,8 @@ export function runTrials(config: SimConfig, trials: number): SimStats {
     const r = simulate(config);
     if (r.win) wins++;
     turnsSum += r.turns;
-    escortHpSum += r.escortHpEnd;
-    if (r.escortHpEnd <= 0) escortKos++;
+    vipHpSum += r.vipHpEnd;
+    if (r.vipHpEnd <= 0) vipKos++;
     partyKoSum += r.partyKoCount;
     hpPctSum += r.partyHpEndPct;
     for (const [k, v] of Object.entries(r.itemsUsed)) {
@@ -1064,8 +1022,8 @@ export function runTrials(config: SimConfig, trials: number): SimStats {
     trials,
     winRate: wins / trials,
     avgTurns: turnsSum / trials,
-    avgEscortHpEnd: escortHpSum / trials,
-    escortKoRate: escortKos / trials,
+    avgVipHpEnd: vipHpSum / trials,
+    vipKoRate: vipKos / trials,
     avgPartyKo: partyKoSum / trials,
     avgPartyHpEndPct: hpPctSum / trials,
     avgItemsUsed,

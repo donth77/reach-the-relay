@@ -4,7 +4,7 @@ Instructions and context for Claude Code sessions working on this project.
 
 ## Project
 
-**Reach the Relay** — a post-AI-collapse party escort RPG for Vibe Jam 2026 (submission deadline **2026-05-01 13:37 UTC**).
+**Reach the Relay** — a post-AI-collapse party VIP-protection RPG for Vibe Jam 2026 (submission deadline **2026-05-01 13:37 UTC**).
 
 See `README.md` for the player-facing overview and `GAME_MECHANICS.md` at the project root for the **authoritative reference of all combat rules, ability/enemy tables, item effects, boss rotation, and score formula** — keep that doc in sync whenever you change numbers in `src/data/*.ts`.
 
@@ -37,7 +37,7 @@ src/
     LobbyScene.ts                 walkable Greenhouse — WASD/arrows, click-to-interact, NPC dialogue, map board, exit portal
       lobby/npcAgent.ts           NpcAgent class (patrol state machine, proximity prompt, dialogue, click-to-interact)
       lobby/mapModal.ts           full-screen route-map modal + "MISSION BRIEFING" shortcut
-      lobby/crewHud.ts            top-right crew/escort HUD widget
+      lobby/crewHud.ts            top-right crew/VIP HUD widget
     PartySelectScene.ts           old standalone party picker (kept as a legacy path)
     PartySelectTerminalScene.ts   in-lobby terminal that pauses Lobby and overlays the picker
     RouteScene.ts                 route select (3 difficulty tiers + TEST routes)
@@ -53,7 +53,7 @@ src/
     briefing.ts                   mission-briefing copy (title, lead, sections, lore)
     classBlurbs.ts                short lore lines shown in NPC dialogue modal
   state/
-    run.ts                        active-run state (party, route, encounter index, HP/MP, escort HP, inventory, abilityUsesRemaining)
+    run.ts                        active-run state (party, route, encounter index, HP/MP, VIP HP, inventory, abilityUsesRemaining)
     lobby.ts                      pre-run state (leader, recruits, last lobby pose) — survives LeaderSelect → Lobby → Route transitions
   combat/
     types.ts                      Unit interface, Side type, ATB/PANEL/DEPTH/DIMMED constants
@@ -163,10 +163,10 @@ sprite-dev/                       working folder, gitignored (whole folder)
 - `case 'salvage'` follows the same pattern: SFX + `applyDamage` are wrapped in an `applyImpact` callback passed to `playFullAttackSequence` so the sound fires at impact mid-anim, not at attack start. Falls back to immediate path if no attack anim exists.
 - `applyDamage` signature: `(target, damage, crit?, element?)`. Element is used by `spawnDamageNumber` to append the vulnerability glyph (🔥/❄/⚡).
 - **Phaser 4 Text quirk**: `spawnFloatNumber` MUST pass concrete `stroke` and `strokeThickness` values (not `undefined`) — passing `undefined` to Phaser 4's Text constructor breaks rendering of non-crit damage numbers. Defaults are `'#000000'` / `4`.
-- **Path-overlap dim**: when an enemy walks through the party to attack the escort, ALL living party members are dimmed for the whole sequence (set to `DIMMED_OTHER_ALPHA = 0.3`). Implementation in `playFullAttackSequence`'s `pathOverlapTargets` block. The escort itself is NOT dimmed (filter is `p.side === 'party'`).
+- **Path-overlap dim**: when an enemy walks through the party to attack the VIP, ALL living party members are dimmed for the whole sequence (set to `DIMMED_OTHER_ALPHA = 0.3`). Implementation in `playFullAttackSequence`'s `pathOverlapTargets` block. The VIP itself is NOT dimmed (filter is `p.side === 'party'`).
 - Enemy HP bars fade out 2.5s after last damage. `beginEnemyTurn` hides every **other** enemy's HP bar before the attacker starts, so a lingering bar from a recent hit isn't visible during a different enemy's attack.
 - The `L` key hotkey for copy-log is registered per-scene (currently only in CombatScene).
-- **`maxUsesPerRest` abilities (GUARD 2, TAUNT 2, SALVAGE 3, FLURRY 5)**: use counters live on `RunState.abilityUsesRemaining` (keyed as `${classId}:${abilityId}`), **not** on the combat scene. They persist across encounters and are only refilled by `refillAbilityUsesOnRest()` from `RestScene`. Don't accidentally reset them on combat scene create.
+- **`maxUsesPerRest` abilities (GUARD 2, TAUNT 2, SALVAGE 3, FOCUS 3, FLURRY 5)**: use counters live on `RunState.abilityUsesRemaining` (keyed as `${classId}:${abilityId}`), **not** on the combat scene. They persist across encounters and are only refilled by `refillAbilityUsesOnRest()` from `RestScene`. Don't accidentally reset them on combat scene create. Design rule: every non-MP special move is rest-limited; MP-gated abilities balance themselves via MP.
 - **FLURRY crit**: the description says "can crit" but `case 'flurry'` currently passes `crit=false` to `applyDamage` and `calculateDamage` doesn't roll crits. If we want per-hit crits, they have to be added inside the `fireHit` loop — regular damage abilities roll 15%, SALVAGE rolls 20%.
 
 ### Score
@@ -174,7 +174,7 @@ sprite-dev/                       working folder, gitignored (whole folder)
 Victory-only, computed in `RunCompleteScene`:
 
 ```
-score = escortHp × 2 + Σ partyHp[key]
+score = vipHp × 2 + Σ partyHp[key]
 ```
 
 No difficulty bonus, no turn/MP penalty. Don't refactor without confirming with the user — it's intentionally simple for the jam.
@@ -258,7 +258,7 @@ Typecheck + eslint + prettier + a headless combat simulator are the quality gate
 - **Don't suggest skipping animation polish** — user has explicitly called this out
 - **Don't commit `.env` / `.env.local` or real API keys** — `.env.example` is the shared doc
 - **Don't regenerate assets when a user has uploaded their own** — check before calling `generate_game_art` if user referenced an asset; ask for the `asset_id`
-- **Dr. Vey's gender is intentionally ambiguous** — use `they/them/their/themself` in all player-visible copy, NPC dialogue, and code comments referring to the escort. Never `he/him/his` or `she/her/hers`. Same convention applies to new cutscene/briefing/dialogue text.
+- **Dr. Vey's gender is intentionally ambiguous** — use `they/them/their/themself` in all player-visible copy, NPC dialogue, and code comments referring to the VIP. Never `he/him/his` or `she/her/hers`. Same convention applies to new cutscene/briefing/dialogue text.
 
 ## User profile
 

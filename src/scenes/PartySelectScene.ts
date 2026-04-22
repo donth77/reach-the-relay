@@ -118,7 +118,7 @@ export class PartySelectScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.confirmButton = this.add
-      .text(width / 2, height - 100, '[ Begin escort ]', {
+      .text(width / 2, height - 100, '[ Begin mission ]', {
         fontFamily: FONT,
         fontSize: '32px',
         color: '#444444',

@@ -1,0 +1,21 @@
+name = "reach-relay-leaderboard"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# D1 binding — `env.DB` in Worker code.
+# IMPORTANT: after running `wrangler d1 create reach-relay-leaderboard`,
+# paste the returned database_id into the `database_id` field below.
+[[d1_databases]]
+binding = "DB"
+database_name = "reach-relay-leaderboard"
+database_id = "53ed7104-535e-4950-8ddf-50376faf4c8f"
+
+# Cloudflare-native rate limiter — exposed to the Worker as
+# `env.RATE_LIMITER.limit({ key })`. /submit keys by caller IP. 1 req / 60 s
+# is plenty: a legit run takes 3–6 minutes. namespace_id is arbitrary but
+# must be unique within this Worker.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 1, period = 60 }

@@ -74,17 +74,17 @@ lines.push('');
 lines.push('## Policy assumptions');
 lines.push('');
 lines.push(
-  '- **Medic**: PATCH escort when ≤50% HP → PATCH ally ≤40% HP → SHIELD escort when ≤70% HP → PULSE boss → STRIKE',
+  '- **Medic**: PATCH VIP when ≤50% HP → PATCH ally ≤40% HP → SHIELD VIP when ≤70% HP → PULSE boss → STRIKE',
 );
 lines.push(
   '- **Netrunner**: pick highest-expected-damage ability (penalizes resisted elements, bonus for vulnerability); falls back to JACK if low MP. Uses POWERCELL item when MP < 8.',
 );
 lines.push(
-  '- **Vanguard**: TAUNT when escort ≤50% HP and next boss phase is not AoE; GUARD when healthy and non-ignoreGuard enemy; else FIGHT',
+  '- **Vanguard**: TAUNT when VIP ≤50% HP and next boss phase is not AoE; GUARD when healthy and non-ignoreGuard enemy; else FIGHT',
 );
 lines.push('- **Cybermonk**: FOCUS when self ≤40% HP; else FLURRY; else FIGHT');
 lines.push('- **Scavenger**: SALVAGE while uses remain; else SLICE');
-lines.push('- **Items**: STIMPAK on escort when critical (≤30% HP); no smoke-grenade simulated');
+lines.push('- **Items**: STIMPAK on VIP when critical (≤30% HP); no smoke-grenade simulated');
 lines.push(
   '- **Evasion**: 30% dodge on basic physical attacks vs evasive enemies (not relevant for boss)',
 );
@@ -97,7 +97,7 @@ lines.push(
 );
 lines.push('');
 lines.push(
-  'Rotation: normal single-target (target-escort) → SHOCKWAVE (damage + ATB reset, weighted-random target) → signature coolant AoE → repeat. Ignores GUARD. Resists thermal + coolant; no vulnerability.',
+  'Rotation: normal single-target (target-vip) → SHOCKWAVE (damage + ATB reset, weighted-random target) → signature coolant AoE → repeat. Ignores GUARD. Resists thermal + coolant; no vulnerability.',
 );
 lines.push('');
 
@@ -146,7 +146,7 @@ lines.push('');
 const balancedParty = ['vanguard', 'netrunner', 'medic'];
 lines.push(`## HP sweep on Wreckwarden — degraded-start party = ${partyLabel(balancedParty)}`);
 lines.push('');
-lines.push('| Wreckwarden HP | Fresh Win % | Degraded Win % | Avg escort HP (degraded) |');
+lines.push('| Wreckwarden HP | Fresh Win % | Degraded Win % | Avg VIP HP (degraded) |');
 lines.push('|---:|---:|---:|---:|');
 for (const hp of [60, 70, 80, 85, 90, 100, 110, 120]) {
   const fresh = runTrials(
@@ -167,7 +167,7 @@ for (const hp of [60, 70, 80, 85, 90, 100, 110, 120]) {
     TRIALS,
   );
   lines.push(
-    `| ${hp} | ${fmtPct(fresh.winRate)} ${inTargetBand(fresh.winRate)} | ${fmtPct(deg.winRate)} ${inTargetBand(deg.winRate)} | ${fmtNum(deg.avgEscortHpEnd)}/35 |`,
+    `| ${hp} | ${fmtPct(fresh.winRate)} ${inTargetBand(fresh.winRate)} | ${fmtPct(deg.winRate)} ${inTargetBand(deg.winRate)} | ${fmtNum(deg.avgVipHpEnd)}/35 |`,
   );
 }
 lines.push('');
@@ -175,7 +175,7 @@ lines.push('');
 // ============ Block 3: Attack sweep ============
 lines.push(`## Attack sweep on Wreckwarden (party = ${partyLabel(balancedParty)}, HP=${w.hp})`);
 lines.push('');
-lines.push('| Wreckwarden Atk | Win % | Avg escort HP | Escort KO % |');
+lines.push('| Wreckwarden Atk | Win % | Avg VIP HP | VIP KO % |');
 lines.push('|---:|---:|---:|---:|');
 for (const atk of [16, 18, 20, 22, 24]) {
   const stats = runTrials(
@@ -188,7 +188,7 @@ for (const atk of [16, 18, 20, 22, 24]) {
   );
   const band = inTargetBand(stats.winRate);
   lines.push(
-    `| ${atk} | ${fmtPct(stats.winRate)} ${band} | ${fmtNum(stats.avgEscortHpEnd)}/35 | ${fmtPct(stats.escortKoRate)} |`,
+    `| ${atk} | ${fmtPct(stats.winRate)} ${band} | ${fmtNum(stats.avgVipHpEnd)}/35 | ${fmtPct(stats.vipKoRate)} |`,
   );
 }
 lines.push('');
@@ -196,7 +196,7 @@ lines.push('');
 // ============ Block 4: Defense sweep ============
 lines.push(`## Defense sweep on Wreckwarden (party = ${partyLabel(balancedParty)}, HP=${w.hp})`);
 lines.push('');
-lines.push('| Wreckwarden Def | Win % | Avg turns | Escort KO % |');
+lines.push('| Wreckwarden Def | Win % | Avg turns | VIP KO % |');
 lines.push('|---:|---:|---:|---:|');
 for (const def of [6, 8, 9, 10, 12]) {
   const stats = runTrials(
@@ -209,7 +209,7 @@ for (const def of [6, 8, 9, 10, 12]) {
   );
   const band = inTargetBand(stats.winRate);
   lines.push(
-    `| ${def} | ${fmtPct(stats.winRate)} ${band} | ${fmtNum(stats.avgTurns)} | ${fmtPct(stats.escortKoRate)} |`,
+    `| ${def} | ${fmtPct(stats.winRate)} ${band} | ${fmtNum(stats.avgTurns)} | ${fmtPct(stats.vipKoRate)} |`,
   );
 }
 lines.push('');
@@ -217,7 +217,7 @@ lines.push('');
 // ============ Block 5: Inventory sweep ============
 lines.push(`## Inventory impact (party = ${partyLabel(balancedParty)})`);
 lines.push('');
-lines.push('| Inventory | Win % | Avg escort HP | Items used |');
+lines.push('| Inventory | Win % | Avg VIP HP | Items used |');
 lines.push('|---|---:|---:|---|');
 const inventories: Array<{ label: string; inv: Record<string, number> }> = [
   {
@@ -238,7 +238,7 @@ for (const { label, inv } of inventories) {
   const stats = runTrials({ partyClassIds: balancedParty, startingInventory: inv }, TRIALS);
   const band = inTargetBand(stats.winRate);
   lines.push(
-    `| ${label} | ${fmtPct(stats.winRate)} ${band} | ${fmtNum(stats.avgEscortHpEnd)}/35 | ${itemsSummary(stats)} |`,
+    `| ${label} | ${fmtPct(stats.winRate)} ${band} | ${fmtNum(stats.avgVipHpEnd)}/35 | ${itemsSummary(stats)} |`,
   );
 }
 lines.push('');
@@ -268,7 +268,7 @@ lines.push('');
 lines.push('## Full-route simulations (new randomized structures)');
 lines.push('');
 lines.push(
-  "Direct Line: 50/50 between 2-enc/no-rest and 3-enc/rest-after-first. Long Highway: 5-6 encounters (random). Transit Line: 3-4 encounters (random). All runs end when either all enemies cleared on the final encounter (win) or escort KO'd / party wiped (lose).",
+  "Direct Line: 50/50 between 2-enc/no-rest and 3-enc/rest-after-first. Long Highway: 5-6 encounters (random). Transit Line: 3-4 encounters (random). All runs end when either all enemies cleared on the final encounter (win) or VIP KO'd / party wiped (lose).",
 );
 lines.push('');
 
@@ -322,8 +322,8 @@ function runPoolSampledRoute(
   let routeWins = 0,
     bossWins = 0,
     encSum = 0,
-    escortHpSum = 0,
-    escortKos = 0,
+    vipHpSum = 0,
+    vipKos = 0,
     hpPctSum = 0;
   const items: Record<string, number> = {};
   for (let t = 0; t < trials; t++) {
@@ -353,8 +353,8 @@ function runPoolSampledRoute(
     if (result.routeWon) routeWins++;
     if (result.bossWon) bossWins++;
     encSum += result.encountersCleared;
-    escortHpSum += result.escortHpEnd;
-    if (result.escortHpEnd <= 0) escortKos++;
+    vipHpSum += result.vipHpEnd;
+    if (result.vipHpEnd <= 0) vipKos++;
     hpPctSum += result.partyHpEndPct;
     for (const [k, v] of Object.entries(result.itemsUsed)) items[k] = (items[k] ?? 0) + v;
   }
@@ -365,8 +365,8 @@ function runPoolSampledRoute(
     routeWinRate: routeWins / trials,
     bossWinRate: bossWins / trials,
     avgEncountersCleared: encSum / trials,
-    avgEscortHpEnd: escortHpSum / trials,
-    escortKoRate: escortKos / trials,
+    avgVipHpEnd: vipHpSum / trials,
+    vipKoRate: vipKos / trials,
     avgPartyHpEndPct: hpPctSum / trials,
     avgItemsUsed: avgItems,
   };
@@ -379,15 +379,13 @@ function routeRow(label: string, stats: ReturnType<typeof runRouteTrials>): stri
     const v = stats.avgItemsUsed[k] ?? 0;
     if (v > 0.01) items.push(`${k}:${fmtNum(v, 2)}`);
   }
-  return `| ${label} | ${fmtPct(stats.routeWinRate)} ${band} | ${fmtPct(stats.bossWinRate)} | ${fmtNum(stats.avgEncountersCleared, 2)} | ${fmtNum(stats.avgEscortHpEnd)}/35 | ${items.join(', ') || '—'} |`;
+  return `| ${label} | ${fmtPct(stats.routeWinRate)} ${band} | ${fmtPct(stats.bossWinRate)} | ${fmtNum(stats.avgEncountersCleared, 2)} | ${fmtNum(stats.avgVipHpEnd)}/35 | ${items.join(', ') || '—'} |`;
 }
 
 // Direct Line — both variants + blended
 lines.push(`### Direct Line (party = ${partyLabel(routeParty)}, inventory = 1 stim)`);
 lines.push('');
-lines.push(
-  '| Variant | Full-run win % | Boss win % | Avg enc cleared | Escort HP end | Items used |',
-);
+lines.push('| Variant | Full-run win % | Boss win % | Avg enc cleared | VIP HP end | Items used |');
 lines.push('|---|---:|---:|---:|---:|---|');
 const dlaStats = runRouteTrials(directLineVariantA, TRIALS);
 const dlbStats = runRouteTrials(directLineVariantB, TRIALS);
@@ -405,7 +403,7 @@ lines.push(
   `### Long Highway (party = ${partyLabel(routeParty)}, inventory = 3/2/1/1) — pool-sampled`,
 );
 lines.push('');
-lines.push('| Variant | Full-run win % | Avg enc cleared | Escort HP end |');
+lines.push('| Variant | Full-run win % | Avg enc cleared | VIP HP end |');
 lines.push('|---|---:|---:|---:|');
 const longHighwayInv = { stimpak: 3, powercell: 2, adrenaline: 1, smokegrenade: 1 };
 const lh5 = runPoolSampledRoute('long-highway', routeParty, longHighwayInv, 5, TRIALS);
@@ -418,13 +416,13 @@ const lhBlendStats = runPoolSampledRoute(
   TRIALS,
 );
 lines.push(
-  `| 5 encounters | ${fmtPct(lh5.routeWinRate)} ${inTargetBand(lh5.routeWinRate)} | ${fmtNum(lh5.avgEncountersCleared, 2)} | ${fmtNum(lh5.avgEscortHpEnd)}/35 |`,
+  `| 5 encounters | ${fmtPct(lh5.routeWinRate)} ${inTargetBand(lh5.routeWinRate)} | ${fmtNum(lh5.avgEncountersCleared, 2)} | ${fmtNum(lh5.avgVipHpEnd)}/35 |`,
 );
 lines.push(
-  `| 6 encounters | ${fmtPct(lh6.routeWinRate)} ${inTargetBand(lh6.routeWinRate)} | ${fmtNum(lh6.avgEncountersCleared, 2)} | ${fmtNum(lh6.avgEscortHpEnd)}/35 |`,
+  `| 6 encounters | ${fmtPct(lh6.routeWinRate)} ${inTargetBand(lh6.routeWinRate)} | ${fmtNum(lh6.avgEncountersCleared, 2)} | ${fmtNum(lh6.avgVipHpEnd)}/35 |`,
 );
 lines.push(
-  `| **50/50 (5 or 6)** | **${fmtPct(lhBlendStats.routeWinRate)} ${inTargetBand(lhBlendStats.routeWinRate)}** | ${fmtNum(lhBlendStats.avgEncountersCleared, 2)} | ${fmtNum(lhBlendStats.avgEscortHpEnd)}/35 |`,
+  `| **50/50 (5 or 6)** | **${fmtPct(lhBlendStats.routeWinRate)} ${inTargetBand(lhBlendStats.routeWinRate)}** | ${fmtNum(lhBlendStats.avgEncountersCleared, 2)} | ${fmtNum(lhBlendStats.avgVipHpEnd)}/35 |`,
 );
 lines.push('');
 const lhBlend = lhBlendStats.routeWinRate;
@@ -434,7 +432,7 @@ lines.push(
   `### Transit Line (party = ${partyLabel(routeParty)}, inventory = 2/1/1/0) — pool-sampled`,
 );
 lines.push('');
-lines.push('| Variant | Full-run win % | Avg enc cleared | Escort HP end |');
+lines.push('| Variant | Full-run win % | Avg enc cleared | VIP HP end |');
 lines.push('|---|---:|---:|---:|');
 const transitLineInv = { stimpak: 2, powercell: 1, adrenaline: 1, smokegrenade: 0 };
 const tl3 = runPoolSampledRoute('transit-line', routeParty, transitLineInv, 3, TRIALS);
@@ -447,13 +445,13 @@ const tlBlendStats = runPoolSampledRoute(
   TRIALS,
 );
 lines.push(
-  `| 3 encounters | ${fmtPct(tl3.routeWinRate)} ${inTargetBand(tl3.routeWinRate)} | ${fmtNum(tl3.avgEncountersCleared, 2)} | ${fmtNum(tl3.avgEscortHpEnd)}/35 |`,
+  `| 3 encounters | ${fmtPct(tl3.routeWinRate)} ${inTargetBand(tl3.routeWinRate)} | ${fmtNum(tl3.avgEncountersCleared, 2)} | ${fmtNum(tl3.avgVipHpEnd)}/35 |`,
 );
 lines.push(
-  `| 4 encounters | ${fmtPct(tl4.routeWinRate)} ${inTargetBand(tl4.routeWinRate)} | ${fmtNum(tl4.avgEncountersCleared, 2)} | ${fmtNum(tl4.avgEscortHpEnd)}/35 |`,
+  `| 4 encounters | ${fmtPct(tl4.routeWinRate)} ${inTargetBand(tl4.routeWinRate)} | ${fmtNum(tl4.avgEncountersCleared, 2)} | ${fmtNum(tl4.avgVipHpEnd)}/35 |`,
 );
 lines.push(
-  `| **50/50 (3 or 4)** | **${fmtPct(tlBlendStats.routeWinRate)} ${inTargetBand(tlBlendStats.routeWinRate)}** | ${fmtNum(tlBlendStats.avgEncountersCleared, 2)} | ${fmtNum(tlBlendStats.avgEscortHpEnd)}/35 |`,
+  `| **50/50 (3 or 4)** | **${fmtPct(tlBlendStats.routeWinRate)} ${inTargetBand(tlBlendStats.routeWinRate)}** | ${fmtNum(tlBlendStats.avgEncountersCleared, 2)} | ${fmtNum(tlBlendStats.avgVipHpEnd)}/35 |`,
 );
 lines.push('');
 const tlBlend = tlBlendStats.routeWinRate;

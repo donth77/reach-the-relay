@@ -177,6 +177,35 @@ export class RelayCutsceneScene extends Phaser.Scene {
     super('RelayCutscene');
   }
 
+  /**
+   * Deferred from BootScene — cutscene-only assets (6 backgrounds +
+   * 3 SFX) don't need to block the initial title-screen boot. Phaser
+   * caches loaded assets, so re-entry doesn't refetch.
+   */
+  preload(): void {
+    this.load.image(
+      'cutscene-relay-hilltop-wide',
+      'assets/backgrounds/cutscene/relay-hilltop-wide.webp',
+    );
+    this.load.image(
+      'cutscene-relay-entrance-medium',
+      'assets/backgrounds/cutscene/relay-entrance-medium.webp',
+    );
+    this.load.image(
+      'cutscene-relay-console-lever-up',
+      'assets/backgrounds/cutscene/relay-console-lever-up.webp',
+    );
+    this.load.image(
+      'cutscene-relay-console-lever-down',
+      'assets/backgrounds/cutscene/relay-console-lever-down.webp',
+    );
+    this.load.image('cutscene-relay-tower-on', 'assets/backgrounds/cutscene/relay-tower-on.webp');
+    this.load.image('cutscene-relay-tower-off', 'assets/backgrounds/cutscene/relay-tower-off.webp');
+    this.load.audio('sfx-relay-lever', 'assets/audio/sfx/relay-lever.mp3');
+    this.load.audio('sfx-relay-broadcast', 'assets/audio/sfx/relay-broadcast.mp3');
+    this.load.audio('sfx-relay-beacon-blink', 'assets/audio/sfx/relay-beacon-blink.mp3');
+  }
+
   create(): void {
     log('SCENE', 'RelayCutscene created');
     const { width, height } = this.scale;

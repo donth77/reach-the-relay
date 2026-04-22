@@ -59,7 +59,7 @@ export function getResolvedParty(): string[] {
   return out;
 }
 
-export function setLastPlayerPose(pose: LobbyPlayerPose): void {
+export function setLastPlayerPose(pose: LobbyPlayerPose | null): void {
   state.lastPlayerPose = pose;
 }
 
@@ -70,7 +70,7 @@ export function resetLobbyState(): void {
 
 /**
  * Called when a run ends and the player returns to the Lobby to plan
- * another escort. Keeps the chosen leader (player restarts from Title
+ * another run. Keeps the chosen leader (player restarts from Title
  * to re-pick), but clears recruits + last player pose so the next run
  * starts fresh. Ensures the player can pick a different crew without
  * being forced through LeaderSelect again.

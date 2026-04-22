@@ -1,8 +1,8 @@
 # Reach the Relay
 
-A post-AI-collapse party escort RPG built for **Vibe Jam 2026**. SNES-era FF6 / Dragon Quest III visuals, ATB combat, built in Phaser 4 + TypeScript.
+A post-AI-collapse party VIP-protection RPG built for **Vibe Jam 2026**. SNES-era FF6 / Dragon Quest III visuals, ATB combat, built in Phaser 4 + TypeScript.
 
-> Unified super-AI brought civilization down decades ago. From the survivor commune of **Greenhouse** — a reclaimed pre-fall botanical conservatory — you escort Dr. Vey to **The Relay**, a hilltop radio tower still broadcasting a reconnection beacon for scattered humans. The Censor hunts the airwaves, so sensitive intel travels by courier.
+> Unified super-AI brought civilization down decades ago. From the survivor commune of **Greenhouse** — a reclaimed pre-fall botanical conservatory — you guide Dr. Vey to **The Relay**, a hilltop radio tower still broadcasting a reconnection beacon for scattered humans. The Censor hunts the airwaves, so sensitive intel travels by courier.
 
 ---
 
@@ -16,6 +16,8 @@ npm run preview    # preview the production build
 ```
 
 Optional: copy `.env.example` → `.env.local` to override defaults (e.g. `VITE_DEBUG_LOG=false` to disable the in-memory logger).
+
+Debug builds: `SOURCEMAP=1 npm run build` re-enables source maps in the production bundle (off by default — strips ~12 MB of readable TS source from `dist/`).
 
 Other scripts:
 
@@ -35,15 +37,15 @@ No unit-test suite — typecheck, lint, and the combat sim are the quality gates
 - **Title** — attract screen. Press any key to continue. A small floating button in the corner toggles title music (persisted to localStorage).
 - **Leader Select** — pick 1 of 5 classes as your leader. The leader is the character you walk around as in the Greenhouse, and is always in combat.
 - **Greenhouse (Lobby)** — walkable top-down commune. Build your party of 3 either by:
-  - **Talking to NPCs** — the other 4 adventurer classes are scattered around. Walk up + press <kbd>E</kbd>/<kbd>Enter</kbd>/<kbd>Space</kbd> (or click) to recruit. Dr. Vey or Mira handle the escort pick.
-  - **Using the terminal** — skip the wandering, pick companions + escort from a menu.
+  - **Talking to NPCs** — the other 4 adventurer classes are scattered around. Walk up + press <kbd>E</kbd>/<kbd>Enter</kbd>/<kbd>Space</kbd> (or click) to recruit. Dr. Vey or Mira handle the VIP pick.
+  - **Using the terminal** — skip the wandering, pick companions + VIP from a menu.
 - **Route select** — 3 tiers:
   - *easy* — 5–6 encounters, 2 rest stops
-  - *medium* — 3–4 encounters, 1 rest stop
-  - *hard* — 2 or 3 encounters, ends in the Wreckwarden boss. Brutal.
+  - *medium* — 3–4 encounters, 1–2 rest stops (the 4-encounter variant gets a second rest)
+  - *hard* — 2 or 3 encounters, 0–1 rest stops, ends in the Wreckwarden boss. Brutal.
   - Encounter counts + specific enemy compositions are sampled per run for replayability.
-- **Combat** — SNES-style ATB (Active Time Battle). Party on the right, enemies on the left, escort in the back. Gauges fill over time; when yours fills, combat pauses and your action menu appears.
-- **Rest** — between-encounter healing and full refill of per-rest abilities (GUARD, TAUNT, SALVAGE, FLURRY).
+- **Combat** — SNES-style ATB (Active Time Battle). Party on the right, enemies on the left, VIP in the back. Gauges fill over time; when yours fills, combat pauses and your action menu appears.
+- **Rest** — between-encounter healing and full refill of per-rest abilities (GUARD, TAUNT, SALVAGE, FOCUS, FLURRY). Pre-boss rests fully restore HP/MP instead of partial.
 - **Run Complete** — victory or defeat screen with score.
 
 ### Classes
@@ -51,8 +53,8 @@ No unit-test suite — typecheck, lint, and the combat sim are the quality gates
 | Class       | Role                         | Key abilities                                                              |
 | ----------- | ---------------------------- | -------------------------------------------------------------------------- |
 | Vanguard    | Frontline striker + tank     | FIGHT, GUARD* (intercept), TAUNT*                                          |
-| Netrunner   | Elemental magic DPS          | JACK, OVERLOAD (🔥), FROSTLOCK (❄ + slow), SURGE (⚡)                        |
-| Medic       | Support + healing            | STRIKE, PATCH (heal), PULSE (anti-robotic), AMP (ATB boost), SHIELD        |
+| Netrunner   | Elemental DPS                | JACK, OVERLOAD (🔥), FROSTLOCK (❄ + slow), SURGE (⚡)                        |
+| Medic       | Support + healing            | STRIKE, PATCH (heal), PULSE (anti-robotic), AMP (free turn), SHIELD        |
 | Scavenger   | Physical crit + utility      | SLICE, SALVAGE* (50% crit + 25% item drop)                                 |
 | Cybermonk   | Physical multi-hit           | FIGHT, FOCUS (self-heal), FLURRY* (3 hits)                                 |
 
@@ -76,10 +78,10 @@ Each enemy has a `vulnerability` (1.5× damage from that element) and optional `
 Victory-only — see `src/scenes/RunCompleteScene.ts`:
 
 ```
-score = (escort HP × 2) + Σ (remaining HP of each party member)
+score = (VIP HP × 2) + Σ (remaining HP of each party member)
 ```
 
-Escort HP is doubled because protecting Dr. Vey is the core mission. KO'd party members contribute 0. No difficulty bonus, no turn/MP penalty — a simple "how intact did you arrive" metric.
+VIP HP is doubled because protecting Dr. Vey is the core mission. KO'd party members contribute 0. No difficulty bonus, no turn/MP penalty — a simple "how intact did you arrive" metric.
 
 ---
 
@@ -117,7 +119,7 @@ See `CLAUDE.md` for the full annotated directory layout. High-level:
 Two module-scoped singletons survive scene transitions without serialization:
 
 - `state/lobby.ts` — pre-run choices: leader id, recruited set, last lobby pose. Active from Leader Select through Route Select.
-- `state/run.ts` — active-run state: party, route, encounter index, HP/MP per party member, escort HP, inventory, `abilityUsesRemaining`. Created by `startRun()` at Route Select commit.
+- `state/run.ts` — active-run state: party, route, encounter index, HP/MP per party member, VIP HP, inventory, `abilityUsesRemaining`. Created by `startRun()` at Route Select commit.
 
 ### Audio
 

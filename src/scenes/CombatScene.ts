@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { CLASSES, type AbilityDef, type ClassDef, type Element } from '../data/classes';
 import { ENEMIES, type EnemyDef } from '../data/enemies';
 import { ITEMS, ITEM_ORDER, type ItemDef } from '../data/items';
-import { getRun, hasRun, ESCORT_MAX_HP } from '../state/run';
+import { getRun, hasRun, VIP_MAX_HP } from '../state/run';
 import type { BackgroundVariant } from '../data/routes';
 import { log, copyLogToClipboard } from '../util/logger';
 import { playMusicPool } from '../util/music';
@@ -27,7 +27,13 @@ import {
   type Side,
   type Unit,
 } from '../combat/types';
-import { calculateDamage, getUnitFacing, validTargets, validItemTargets } from '../combat/helpers';
+import {
+  calculateDamage,
+  getUnitFacing,
+  validTargets,
+  validItemTargets,
+  tauntWillApply,
+} from '../combat/helpers';
 import { flashSprite, playHitShake, spawnDamageNumber, spawnFloatNumber } from '../combat/fx';
 
 export class CombatScene extends Phaser.Scene {
@@ -233,7 +239,7 @@ export class CombatScene extends Phaser.Scene {
       this.anims.create({ key: 'medic-cast-west', frames, frameRate: 9, repeat: 0 });
     }
 
-    // Dr. Vey escort death animation (faces west like party)
+    // Dr. Vey VIP death animation (faces west like party)
     if (!this.anims.exists('drvey-death-west')) {
       const frames = Array.from({ length: 7 }, (_, i) => ({
         key: `drvey-death-west-${i.toString().padStart(3, '0')}`,
@@ -450,7 +456,7 @@ export class CombatScene extends Phaser.Scene {
     if (this.combatOver || this.waitMode) return;
     const dt = delta / 1000;
     for (const u of this.units) {
-      if (u.ko || u.side === 'escort') continue;
+      if (u.ko || u.side === 'vip') continue;
       u.atb = Math.min(ATB_MAX, u.atb + u.speed * ATB_RATE * u.atbModifier * dt);
       this.updatePanelRow(u);
       if (u.atb >= ATB_MAX) {
@@ -497,16 +503,16 @@ export class CombatScene extends Phaser.Scene {
       return unit;
     });
 
-    // Escort sits behind the vertical center of the party line (so enemies
-    // attacking the escort visually don't appear to be hitting a specific party member).
-    const escort = this.makeUnit({
+    // VIP sits behind the vertical center of the party line (so enemies
+    // attacking the VIP visually don't appear to be hitting a specific party member).
+    const vip = this.makeUnit({
       id: 'drvey',
       name: 'Dr. Vey',
-      side: 'escort',
+      side: 'vip',
       spriteKey: 'drvey-west',
       scale: 2.5,
-      hp: run.escortHp,
-      maxHp: ESCORT_MAX_HP,
+      hp: run.vipHp,
+      maxHp: VIP_MAX_HP,
       mp: 0,
       maxMp: 0,
       attack: 0,
@@ -614,6 +620,37 @@ export class CombatScene extends Phaser.Scene {
       return unit;
     });
 
+    // Boss-bg dynamic party clamp — on the Dead Substation boss bg,
+    // the static `partyYOffset: 40` on the encounter is the canonical
+    // position (tuned against Vanguard/Netrunner/Medic). The clamp is
+    // a SAFETY NET for alternate compositions whose idx-last sprite
+    // is taller or positioned such that the formation would protrude
+    // into the UI panel. It only pulls UP when necessary, preserving
+    // the hand-tuned baseline when the default position is fine.
+    //
+    // Key detail: party sprite canvases have significant transparent
+    // padding below the visible character (e.g. Vanguard's 96×96 has
+    // ~16 px of empty canvas under the boots → 40 px at scale 2.5).
+    // Using raw bbox feet triggers false-positive "overlap" clamps.
+    // We grant a BBOX_PADDING_ALLOWANCE so the clamp only fires when
+    // the VISIBLE character actually threatens the UI panel.
+    if (currentEncounter.backgroundKey === 'bg-dead-substation-boss') {
+      const BBOX_PADDING_ALLOWANCE = 60;
+      const allowedBboxBottom = PANEL_TOP + BBOX_PADDING_ALLOWANCE;
+      const last = party[party.length - 1];
+      if (last) {
+        const tex = this.textures.get(last.spriteKey);
+        const nativeH = tex?.getSourceImage?.()?.height ?? 68;
+        const hLast = nativeH * last.scale;
+        const currentBboxBottom = last.posY + hLast / 2;
+        if (currentBboxBottom > allowedBboxBottom) {
+          const shift = allowedBboxBottom - currentBboxBottom; // negative, pull up
+          for (const u of party) u.posY += shift;
+          vip.posY += shift;
+        }
+      }
+    }
+
     // Clamp enemy positions so no sprite bottom overlaps the bottom UI panel.
     // If any enemy's estimated bottom edge extends past PANEL_TOP (minus padding),
     // shift the whole enemy group up by that overflow so the formation stays cohesive.
@@ -637,7 +674,7 @@ export class CombatScene extends Phaser.Scene {
       for (const enemy of enemies) enemy.posY -= overflow;
     }
 
-    this.units = [...party, escort, ...enemies];
+    this.units = [...party, vip, ...enemies];
   }
 
   private unitFromClass(def: ClassDef, side: Side, posX: number, posY: number): Unit {
@@ -960,7 +997,10 @@ export class CombatScene extends Phaser.Scene {
     if (u.atbModifier < 1 && u.atbModifierTurnsLeft > 0) parts.push('❄');
     if (u.atbModifier > 1 && u.atbModifierTurnsLeft > 0) parts.push('▲');
     if (u.shielded) parts.push('◆');
-    if (u.tauntedBy) parts.push('!');
+    // `!` only shows when the taunt would actually redirect the enemy's NEXT
+    // action — suppresses a misleading "locked in" cue on Wreckwarden during
+    // Shockwave/AoE phases and on Nanite Swarm (always multi-hit).
+    if (tauntWillApply(u)) parts.push('!');
     if (u.missing) parts.push('~');
     u.statusIcon.setText(parts.join(' '));
   }
@@ -1027,7 +1067,7 @@ export class CombatScene extends Phaser.Scene {
 
     const rowUnits = [
       ...this.units.filter((u) => u.side === 'party'),
-      ...this.units.filter((u) => u.side === 'escort'),
+      ...this.units.filter((u) => u.side === 'vip'),
     ];
 
     rowUnits.forEach((u, i) => {
@@ -1042,7 +1082,7 @@ export class CombatScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5);
 
-      const nameColor = u.side === 'escort' ? '#f5c97b' : '#e6e6e6';
+      const nameColor = u.side === 'vip' ? '#f5c97b' : '#e6e6e6';
       const nameText = this.add
         .text(COL_NAME, 0, u.name, {
           fontFamily: FONT,
@@ -1065,7 +1105,7 @@ export class CombatScene extends Phaser.Scene {
       let mpText: Phaser.GameObjects.Text | undefined;
       let atbBar: Phaser.GameObjects.Rectangle | undefined;
 
-      if (u.side !== 'escort') {
+      if (u.side !== 'vip') {
         this.add.rectangle(COL_ATB_BAR, 0, ATB_BAR_WIDTH, 8, 0x222222).setOrigin(0, 0.5);
         atbBar = this.add.rectangle(COL_ATB_BAR, 0, 0, 8, 0xffdd55).setOrigin(0, 0.5);
 
@@ -1110,7 +1150,7 @@ export class CombatScene extends Phaser.Scene {
     if (row.mpText) row.mpText.setText(`MP ${u.mp}`);
     row.activeMarker.setText(this.activeUnitId === u.id ? '>' : ' ');
 
-    const baseNameColor = u.side === 'escort' ? '#f5c97b' : '#e6e6e6';
+    const baseNameColor = u.side === 'vip' ? '#f5c97b' : '#e6e6e6';
     if (u.ko) {
       row.nameText.setAlpha(0.4);
       row.nameText.setColor(baseNameColor);
@@ -2066,11 +2106,13 @@ export class CombatScene extends Phaser.Scene {
       case 'boost': {
         playSfx(this, ability.sfxKey ?? 'sfx-status-apply', ability.sfxKey ? 1 : 0.5);
         this.playCastTween(attacker);
-        target.atbModifier = 2;
-        target.atbModifierTurnsLeft = 1;
-        this.updateStatusIcon(target);
+        // AMP grants the target an immediate free action: fills their ATB
+        // gauge to max so they act next. Real action-economy trade — spend
+        // Medic's turn + 6 MP to hand an ally an extra turn.
+        target.atb = ATB_MAX;
+        this.updatePanelRow(target);
         spawnFloatNumber(this, target, 'AMP', '#ffdd88');
-        this.showMessage(`${attacker.name} AMPs ${target.name} — gauge doubled`);
+        this.showMessage(`${attacker.name} AMPs ${target.name} — free turn!`);
         break;
       }
       case 'shield-buff': {
@@ -2313,7 +2355,7 @@ export class CombatScene extends Phaser.Scene {
       other.enemyHpBar.setAlpha(0);
       other.enemyHpBarBg?.setAlpha(0);
     }
-    const living = this.units.filter((u) => (u.side === 'party' || u.side === 'escort') && !u.ko);
+    const living = this.units.filter((u) => (u.side === 'party' || u.side === 'vip') && !u.ko);
     if (living.length === 0) {
       this.waitMode = false;
       return;
@@ -2339,10 +2381,14 @@ export class CombatScene extends Phaser.Scene {
       const phase = (enemy.turnCount - 1) % 3;
       if (phase === 1) {
         this.playShockwaveAttack(enemy, shock);
+        // Taunt persists across non-single-target phases; refresh the `!`
+        // icon so the tauntWillApply prediction reflects the new turnCount.
+        this.updateStatusIcon(enemy);
         return;
       }
       if (phase === 2) {
         this.playSignatureAoE(enemy, sig);
+        this.updateStatusIcon(enemy);
         return;
       }
       // phase 0 → fall through to normal attack below
@@ -2350,9 +2396,12 @@ export class CombatScene extends Phaser.Scene {
       if (enemy.signatureNext) {
         enemy.signatureNext = false;
         this.playSignatureAoE(enemy, sig);
+        this.updateStatusIcon(enemy);
         return;
       }
       enemy.signatureNext = true;
+      // signatureNext flipped — next turn will be AoE, taunt won't redirect.
+      this.updateStatusIcon(enemy);
     }
 
     if (behavior === 'multi-hit') {
@@ -2378,7 +2427,7 @@ export class CombatScene extends Phaser.Scene {
           this.playCastTween(enemy);
           this.showMessage(`${enemy.name} swarms the party!`);
           const targets = this.units.filter(
-            (u) => (u.side === 'party' || u.side === 'escort') && !u.ko,
+            (u) => (u.side === 'party' || u.side === 'vip') && !u.ko,
           );
           for (const t of targets) {
             const damage = Math.max(1, calculateDamage(enemy, t, 0.85));
@@ -2407,9 +2456,9 @@ export class CombatScene extends Phaser.Scene {
       }
       enemy.tauntedBy = null;
       this.updateStatusIcon(enemy);
-    } else if (behavior === 'target-escort') {
-      const escort = this.units.find((u) => u.side === 'escort' && !u.ko);
-      target = escort ?? living[Math.floor(Math.random() * living.length)];
+    } else if (behavior === 'target-vip') {
+      const vip = this.units.find((u) => u.side === 'vip' && !u.ko);
+      target = vip ?? living[Math.floor(Math.random() * living.length)];
     } else if (behavior === 'prefer-low-hp') {
       // Weighted random preferring lower-HP targets. Full-HP units still have
       // a ~1/3 chance vs a 0-HP unit (weight 1 vs 3).
@@ -2480,7 +2529,7 @@ export class CombatScene extends Phaser.Scene {
     // "always aim at the center party member" rule made it feel like
     // Sentry was locked onto one unit across consecutive attacks. The
     // default random pick (line ~2437 above) handles this; TAUNT /
-    // target-escort / prefer-low-hp branches above still override when
+    // target-vip / prefer-low-hp branches above still override when
     // relevant.
 
     const ignoreGuard = !!enemy.enemyDef?.ignoresGuard;
@@ -2489,7 +2538,7 @@ export class CombatScene extends Phaser.Scene {
 
     // Resolve the GUARD redirect UP FRONT so the walk destination and the
     // path-dim logic use the actual final target. Previously the redirect
-    // happened at impact, so Wirehead would walk toward the escort (dimming
+    // happened at impact, so Wirehead would walk toward the VIP (dimming
     // party on the way) even when GUARD was about to intercept.
     let guardHalved = false;
 
@@ -3106,7 +3155,7 @@ export class CombatScene extends Phaser.Scene {
   /**
    * Boss signature AoE attack: walk to the center party member, play the
    * dedicated elemental animation, on impact damage EVERY living party member
-   * (escort exempt), show elemental impact on each, then walk back.
+   * (VIP exempt), show elemental impact on each, then walk back.
    */
   /**
    * Returns the living party member with the median posY — the visual
@@ -3308,7 +3357,7 @@ export class CombatScene extends Phaser.Scene {
     const targetFeetY = target.posY + (target.feetOffsetY ?? 0);
     const forwardY = targetFeetY - (u.feetOffsetY ?? 0);
 
-    // (Enemies attacking the escort walk directly to them — no clamp. Party
+    // (Enemies attacking the VIP walk directly to them — no clamp. Party
     // members in the visual path are dimmed during the walk, see below.)
 
     // FF6-style: party attacking an enemy stops at the enemy formation's front
@@ -3377,11 +3426,11 @@ export class CombatScene extends Phaser.Scene {
     const sideBase = u.side === 'enemy' ? DEPTH_ENEMY_BASE : DEPTH_PARTY_BASE;
     void sideBase; // kept to document the idle-tier baseline for reference
 
-    // For enemy → escort: the enemy walks through the party to reach the escort,
-    // so dim the entire party (not escort) for the whole sequence. Restored at end.
+    // For enemy → VIP: the enemy walks through the party to reach the VIP,
+    // so dim the entire party (not VIP) for the whole sequence. Restored at end.
     const pathOverlapTargets: Unit[] = [];
     const pathOverlapOriginalAlphas = new Map<Unit, number>();
-    if (u.side === 'enemy' && target.side === 'escort') {
+    if (u.side === 'enemy' && target.side === 'vip') {
       for (const p of this.units) {
         if (p.side !== 'party') continue;
         if (p.ko) continue;
@@ -3552,17 +3601,17 @@ export class CombatScene extends Phaser.Scene {
       log('END_CHECK', 'skipped (combat already over)');
       return;
     }
-    const escort = this.units.find((u) => u.side === 'escort');
+    const vip = this.units.find((u) => u.side === 'vip');
     const livingEnemies = this.units.filter((u) => u.side === 'enemy' && !u.ko);
     const livingParty = this.units.filter((u) => u.side === 'party' && !u.ko);
 
     log('END_CHECK', 'evaluated', {
       livingEnemies: livingEnemies.map((u) => u.id),
       livingParty: livingParty.map((u) => u.id),
-      escortKo: escort?.ko ?? false,
+      vipKo: vip?.ko ?? false,
     });
 
-    if (escort?.ko) {
+    if (vip?.ko) {
       this.loseRun('Dr. Vey was lost.');
     } else if (livingParty.length === 0) {
       this.loseRun('Your party fell.');
@@ -3756,7 +3805,7 @@ export class CombatScene extends Phaser.Scene {
       run.partyHp[u.id] = u.ko ? 1 : u.hp;
       if (u.maxMp > 0) run.partyMp[u.id] = u.mp;
     }
-    const escort = this.units.find((u) => u.side === 'escort');
-    if (escort) run.escortHp = escort.hp;
+    const vip = this.units.find((u) => u.side === 'vip');
+    if (vip) run.vipHp = vip.hp;
   }
 }

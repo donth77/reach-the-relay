@@ -1,6 +1,6 @@
 # Victory Cutscene Plan — "Reaching the Relay"
 
-A short cinematic that plays after the final encounter clears and before `RunCompleteScene`. Payoff moment for the whole escort mission — the party delivers Dr. Vey to the tower, Dr. Vey goes inside briefly to do their work, emerges, and activates the broadcast.
+A short cinematic that plays after the final encounter clears and before `RunCompleteScene`. Payoff moment for the whole VIP mission — the party delivers Dr. Vey to the tower, Dr. Vey goes inside briefly to do their work, emerges, and activates the broadcast.
 
 **Scope**: four beats across four backgrounds, world-walking animations, a custom activation animation for Dr. Vey, a VFX pulse, and a new victory music track. ~12–14 seconds total. Skippable.
 
@@ -75,8 +75,8 @@ src/scenes/RelayCutsceneScene.ts
 Responsibilities:
 - Drive the four-beat state machine (`approach` → `enter_exit` → `activation` → `beacon` → `done`)
 - Load + render all four cutscene backgrounds (hard cuts between beats, optional brief crossfade)
-- Beat 1: spawn party + escort at the bottom of the frame, tween upward with staggered start, running `worldwalk-north` anim per unit
-- Beat 2: cut to the medium side-on bg, respawn party + escort on the left edge, tween rightward with `worldwalk-east` anim (with the `flipX` fallback for classes without a dedicated east). Dr. Vey fades out at the door, pauses ~1s, fades back in.
+- Beat 1: spawn party + VIP at the bottom of the frame, tween upward with staggered start, running `worldwalk-north` anim per unit
+- Beat 2: cut to the medium side-on bg, respawn party + VIP on the left edge, tween rightward with `worldwalk-east` anim (with the `flipX` fallback for classes without a dedicated east). Dr. Vey fades out at the door, pauses ~1s, fades back in.
 - Beat 3: hard cut to the close-up bg, spawn Dr. Vey sprite foregrounded, play custom activation anim, trigger broadcast-ping SFX + small camera shake
 - Beat 4: hard cut to the tower close-up bg, Phaser camera pans UP the tower, then beacon pulses fire with the amber-tinted SHOCKWAVE sprite + broadcast-ping SFX on each
 - Wire skip input + fade-out → `RunCompleteScene`
@@ -307,7 +307,7 @@ Files changed or created:
 4. **Generate Dr. Vey custom activation anim (Beat 3)** — PixelLab `animate_character` custom prompt (east-facing). Extract frames, install. If unusable, flag fallback.
 5. **Generate broadcast-ping SFX** — ElevenLabs one-shot.
 6. **Generate victory music** — Suno prompt (user-driven, external). Install once they pick a take.
-7. **Scaffold `RelayCutsceneScene`** — preload everything, render Beat 1 bg, place party + escort sprites statically at their Beat 1 start positions. Verify positioning.
+7. **Scaffold `RelayCutsceneScene`** — preload everything, render Beat 1 bg, place party + VIP sprites statically at their Beat 1 start positions. Verify positioning.
 8. **Wire Beat 1** — stagger-start north tweens + `worldwalk-north` anim per unit. Transition trigger when all walkers reach stop_y.
 9. **Wire Beat 2** — crossfade bg, respawn sprites on the left edge of the close-up, tween rightward with `worldwalk-east` (with flipX fallback). Transition trigger when Dr. Vey reaches the console.
 10. **Wire Beat 3** — swap Dr. Vey to `drvey-activate-east` anim, camera shake on press, spawn + amber-tint SHOCKWAVE sprite at the beacon location, play broadcast-ping SFX, hold ~1.5s.

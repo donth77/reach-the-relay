@@ -106,12 +106,12 @@ export class PartySelectTerminalScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // Dr. Vey is the fixed escort for v1 (escort selection deferred).
+    // Dr. Vey is the fixed VIP for v1 (VIP selection deferred).
     // Shown on the terminal manifest so the player knows who they're
     // transporting — reinforces the "this is a real courier mission"
     // framing from the worldbuilding.
     this.add
-      .text(width / 2, 134, 'ESCORT: DR. VEY', {
+      .text(width / 2, 134, 'VIP: DR. VEY', {
         fontFamily: FONT,
         fontSize: '18px',
         color: '#ffcc66',

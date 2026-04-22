@@ -3,7 +3,7 @@ import { STARTING_INVENTORY, type Inventory } from '../data/items';
 import type { EncounterDef, RouteDef } from '../data/routes';
 import { drawFromBag, resetBag } from '../util/bag';
 
-const ESCORT_MAX_HP = 35;
+const VIP_MAX_HP = 35;
 
 export interface RunState {
   route: RouteDef;
@@ -15,11 +15,14 @@ export interface RunState {
   encounterIndex: number;
   partyHp: Record<string, number>;
   partyMp: Record<string, number>;
-  escortHp: number;
+  vipHp: number;
   inventory: Inventory;
   // Remaining uses per limited ability, keyed as `${classId}:${abilityId}`.
   // Carries across combats; resets to `maxUsesPerRest` at the Rest scene.
   abilityUsesRemaining: Record<string, number>;
+  // Unix-ms timestamp of run start. Used on victory to compute duration_sec
+  // for the leaderboard submission.
+  startedAt: number;
 }
 
 let currentRun: RunState | null = null;
@@ -56,9 +59,10 @@ export function startRun(route: RouteDef, party: string[], leaderId?: string): v
     encounterIndex: 0,
     partyHp,
     partyMp,
-    escortHp: ESCORT_MAX_HP,
+    vipHp: VIP_MAX_HP,
     inventory,
     abilityUsesRemaining,
+    startedAt: Date.now(),
   };
 }
 
@@ -140,4 +144,4 @@ export function endRun(): void {
   currentRun = null;
 }
 
-export { ESCORT_MAX_HP };
+export { VIP_MAX_HP };

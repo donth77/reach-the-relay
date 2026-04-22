@@ -13,9 +13,16 @@ import { RestScene } from './scenes/RestScene';
 import { RunCompleteScene } from './scenes/RunCompleteScene';
 import { JourneyScene } from './scenes/JourneyScene';
 import { RelayCutsceneScene } from './scenes/RelayCutsceneScene';
+import { LeaderboardScene } from './scenes/LeaderboardScene';
 import { mountDebugBadge, mountDebugCollisionToggle } from './util/logger';
 import { initAudioSettings } from './util/audio';
 import { initOrientationLock } from './util/orientationLock';
+import { ingestUrlUsername } from './state/player';
+
+// Portal entry support: if the page was loaded with `?username=<name>`,
+// populate localStorage BEFORE any scene reads it. Keeps portal visitors
+// from seeing the username prompt on Title.
+ingestUrlUsername();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -43,6 +50,7 @@ const config: Phaser.Types.Core.GameConfig = {
     RestScene,
     RelayCutsceneScene,
     RunCompleteScene,
+    LeaderboardScene,
   ],
 };
 

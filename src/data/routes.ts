@@ -203,6 +203,11 @@ export const ROUTES: RouteDef[] = [
           {
             enemies: ['wreckwarden'],
             enemyYOffset: -30,
+            // Static offset tuned to land the party on the boss
+            // arena's tiled floor without overlapping the UI panel.
+            // Counteracts the route-level partyYOffset:-30 and adds
+            // +10 on top to drop them below the horizon line.
+            partyYOffset: 40,
             backgroundKey: 'bg-dead-substation-boss',
           },
         ],
@@ -218,6 +223,7 @@ export const ROUTES: RouteDef[] = [
           {
             enemies: ['wreckwarden'],
             enemyYOffset: -30,
+            partyYOffset: 40,
             backgroundKey: 'bg-dead-substation-boss',
             // 3-encounter variant ONLY: flag the boss so the pre-boss rest
             // upgrades from partial (50%) to full restore. Sims showed the

@@ -1,4 +1,4 @@
-export type TargetType = 'enemy' | 'self' | 'ally-or-escort';
+export type TargetType = 'enemy' | 'self' | 'ally-or-vip';
 
 export type Element = 'thermal' | 'coolant' | 'surge' | 'none';
 
@@ -213,7 +213,7 @@ export const CLASSES: Record<string, ClassDef> = {
         label: 'PATCH',
         description: 'Heal 25 HP to one ally or Dr. Vey.',
         mpCost: 4,
-        target: 'ally-or-escort',
+        target: 'ally-or-vip',
         effect: 'heal',
         power: 25,
         sfxKey: 'sfx-medic-patch',
@@ -231,9 +231,9 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'stim',
         label: 'AMP',
-        description: "Double an ally's gauge fill rate for 1 turn.",
+        description: 'Grant an ally an immediate free turn.',
         mpCost: 6,
-        target: 'ally-or-escort',
+        target: 'ally-or-vip',
         effect: 'boost',
         sfxKey: 'sfx-medic-stim',
       },
@@ -243,7 +243,7 @@ export const CLASSES: Record<string, ClassDef> = {
         description:
           'Halve damage taken by one ally until their next turn. Works even against Wreckwarden.',
         mpCost: 5,
-        target: 'ally-or-escort',
+        target: 'ally-or-vip',
         effect: 'shield-buff',
         sfxKey: 'sfx-medic-shield',
       },

@@ -1,0 +1,36 @@
+# Reach the Relay
+
+> Post-AI-collapse party VIP-protection RPG built for Vibe Jam 2026. Pick a leader, recruit a crew of three, and guide Dr. Vey through one of three routes to The Relay — a hilltop radio tower still broadcasting a reconnection beacon for scattered humans. SNES-style Active Time Battle (ATB) combat in the style of Final Fantasy VI and Dragon Quest III. Phaser 4 + TypeScript, single-player, 3–6 minute runs.
+
+## Overview
+
+- **Genre:** Party RPG / VIP-protection / short-form roguelike
+- **Engine:** Phaser 4 + TypeScript + Vite
+- **Runtime:** Browser (HTML5)
+- **Players:** Single-player (asynchronous leaderboard planned)
+- **Setting:** ~100 years after an AI collapse. The Censor — a fragment faction of the old super-AI — hunts broadcasts and couriers between surviving communes. The player guides a non-combat scientist NPC through encounters of machine enemies en route to a hilltop radio relay.
+- **Session length:** 3–6 minutes per run
+- **Art direction:** 16-bit SNES JRPG (illustrated backgrounds, animated sprites, chunky UI)
+
+## Core systems
+
+- **ATB Wait Mode combat.** Each unit has a gauge that fills based on speed. When full, the game pauses and the player picks an action. Modeled on SNES Final Fantasy VI.
+- **VIP survival.** Dr. Vey travels in every combat as a non-combat unit. If their HP hits zero the run ends immediately — no revive.
+- **Three routes.** Long Highway (easy, 5–6 encounters, 2 rests), Hollow Atrium Mall (medium, 3–4 encounters, 1–2 rests), Dead Substation (hard/boss, 2–3 encounters, 0–1 rests, ends with the Wreckwarden boss).
+- **Five party classes.** Vanguard (tank), Netrunner (elemental DPS — thermal/coolant/surge), Medic (heal/shield/AMP), Scavenger (crit + item salvage), Cybermonk (multi-hit + self-heal).
+- **Rest-limited abilities.** Every 0-MP special move (GUARD, TAUNT, SALVAGE, FOCUS, FLURRY) has a per-rest use cap, D&D long-rest style.
+- **Score.** Victory-only: `vipHp × 2 + Σ party HP remaining`. Rewards HP efficiency.
+
+## Docs
+
+- [README.md](./README.md): Player-facing overview + run instructions
+- [GAME_MECHANICS.md](./GAME_MECHANICS.md): Complete reference for classes, abilities, items, enemies, status effects, routes, scoring
+
+## Optional
+
+- [Source code on GitHub](https://github.com/donth77/reach-the-relay): AI-assisted codebase (written with Claude Code). TypeScript strict mode, Phaser 4, Vite.
+- [Vibe Jam 2026](https://vibej.am/2026): The web game jam this was submitted to.
+
+## Credits
+
+Design, code, and art direction: Tom Donohue. Sprites generated with PixelLab + SpriteCook, music with Suno, SFX with ElevenLabs, backgrounds with AI image generation. Silkscreen typeface by Jason Kottke (self-hosted).

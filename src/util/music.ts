@@ -31,8 +31,16 @@ export function playMusicPool(scene: Phaser.Scene, pool: string[], volume: numbe
   const available = pool.filter((k) => cache.has(k));
   if (available.length === 0) {
     stopMusic();
+    stopStrayMusic(scene, pool);
     return;
   }
+
+  // Kill any music-* sound that's NOT in the incoming pool. Catches tracks
+  // started outside the pool manager via direct `scene.sound.play(...)` —
+  // e.g. the defeat-screen "music-signal-lost" track. Without this, that
+  // sound keeps playing when the player clicks Return to Greenhouse and
+  // overlaps with the lobby theme.
+  stopStrayMusic(scene, pool);
 
   // If the currently-playing track is a member of the new pool, let it keep
   // going — don't restart mid-track just because we re-entered a scene.
@@ -46,6 +54,19 @@ export function playMusicPool(scene: Phaser.Scene, pool: string[], volume: numbe
   currentPool = [...pool];
   currentVolume = volume;
   playNext(scene);
+}
+
+/**
+ * Stop every currently-playing `music-*` sound whose key is NOT in `keepPool`.
+ * Used as a cleanup inside `playMusicPool` to kill any music track started
+ * outside the pool manager (direct `scene.sound.play(...)` calls).
+ */
+function stopStrayMusic(scene: Phaser.Scene, keepPool: string[]): void {
+  for (const s of scene.sys.game.sound.getAllPlaying()) {
+    if (s.key?.startsWith('music-') && !keepPool.includes(s.key)) {
+      s.stop();
+    }
+  }
 }
 
 /**

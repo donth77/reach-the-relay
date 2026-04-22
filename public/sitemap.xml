@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Replace <your-domain> with the deployed URL before going live.
+  On itch.io the sitemap is mostly cosmetic (itch.io owns the SEO of the
+  game-page URL). Keep this file so if the game ever lives at a custom
+  domain, crawlers have a canonical entry point.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://reachtherelay.example.com/</loc>
+    <lastmod>2026-04-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

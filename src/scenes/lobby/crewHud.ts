@@ -4,7 +4,7 @@ import { CLASSES } from '../../data/classes';
 import { getLobbyState } from '../../state/lobby';
 
 /**
- * Persistent top-right HUD showing the current escort and crew roster
+ * Persistent top-right HUD showing the current VIP and crew roster
  * in the walkable Lobby. Terminal-styled (dark green-black panel with
  * cyan-green bracket corners) to match the rest of the comms theme.
  *
@@ -14,7 +14,7 @@ import { getLobbyState } from '../../state/lobby';
  * or on a change event.
  */
 
-const ESCORT_NAME = 'DR. VEY';
+const VIP_NAME = 'DR. VEY';
 
 const PANEL_W = 260;
 const PANEL_H = 180;
@@ -70,25 +70,25 @@ export class CrewHud {
 
     // Section labels — static (don't change with state).
     const contentX = left + 16;
-    const escortLabel = scene.add
-      .text(contentX, top + 12, 'ESCORT', {
+    const vipLabel = scene.add
+      .text(contentX, top + 12, 'VIP', {
         fontFamily: FONT,
         fontSize: '14px',
         color: '#6aaa8a',
       })
       .setOrigin(0, 0)
       .setScrollFactor(0);
-    this.container.add(escortLabel);
+    this.container.add(vipLabel);
 
-    const escortValue = scene.add
-      .text(contentX, top + 32, ESCORT_NAME, {
+    const vipValue = scene.add
+      .text(contentX, top + 32, VIP_NAME, {
         fontFamily: FONT,
         fontSize: '20px',
         color: '#ffcc66',
       })
       .setOrigin(0, 0)
       .setScrollFactor(0);
-    this.container.add(escortValue);
+    this.container.add(vipValue);
 
     const crewLabel = scene.add
       .text(contentX, top + 72, 'CREW', {

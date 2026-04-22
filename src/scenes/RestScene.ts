@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { CLASSES } from '../data/classes';
-import { getRun, ESCORT_MAX_HP, refillAbilityUsesOnRest } from '../state/run';
+import { getRun, VIP_MAX_HP, refillAbilityUsesOnRest } from '../state/run';
 import { FONT } from '../util/ui';
 import { installPauseMenuEsc } from '../util/pauseMenu';
 import { ITEMS, ITEM_ORDER } from '../data/items';
@@ -8,14 +8,14 @@ import { ITEMS, ITEM_ORDER } from '../data/items';
 // Partial-rest percentages (mid-route rest stop).
 const HEAL_HP_PCT = 0.5;
 const HEAL_MP_PCT = 0.5;
-const HEAL_ESCORT_PCT = 0.15;
+const HEAL_VIP_PCT = 0.15;
 const REVIVE_KO_PCT = 0.25;
 // Pre-boss rest restores EVERYTHING. Used when the next encounter has
 // `isBoss: true`. Preserves the strategic weight of mid-route rests
 // while giving the party a proper "last camp before the dungeon boss."
 const PRE_BOSS_HP_PCT = 1.0;
 const PRE_BOSS_MP_PCT = 1.0;
-const PRE_BOSS_ESCORT_PCT = 1.0;
+const PRE_BOSS_VIP_PCT = 1.0;
 
 export class RestScene extends Phaser.Scene {
   constructor() {
@@ -30,13 +30,13 @@ export class RestScene extends Phaser.Scene {
     // Pre-boss rest = full restore. Detected by peeking at the NEXT
     // encounter (run.encounterIndex already advanced past the cleared one
     // in CombatScene.winEncounter). If that encounter is flagged as a
-    // boss, upgrade HP/MP/escort restore to 100%. Otherwise, normal
+    // boss, upgrade HP/MP/VIP restore to 100%. Otherwise, normal
     // partial restore.
     const nextEnc = run.route.encounters[run.encounterIndex];
     const preBoss = nextEnc?.isBoss === true;
     const hpPct = preBoss ? PRE_BOSS_HP_PCT : HEAL_HP_PCT;
     const mpPct = preBoss ? PRE_BOSS_MP_PCT : HEAL_MP_PCT;
-    const escortPct = preBoss ? PRE_BOSS_ESCORT_PCT : HEAL_ESCORT_PCT;
+    const vipPct = preBoss ? PRE_BOSS_VIP_PCT : HEAL_VIP_PCT;
 
     // Snapshot pre-rest values so the render pass can show the exact
     // delta each member gained (`+13 HP`, `+10 MP`, `REVIVED +18` for
@@ -49,7 +49,7 @@ export class RestScene extends Phaser.Scene {
       revived: boolean;
     }
     const partyDeltas = new Map<string, HealDelta>();
-    const escortHpBefore = run.escortHp;
+    const vipHpBefore = run.vipHp;
 
     for (const key of run.party) {
       const def = CLASSES[key];
@@ -79,8 +79,8 @@ export class RestScene extends Phaser.Scene {
         revived: wasKo,
       });
     }
-    run.escortHp = Math.min(ESCORT_MAX_HP, Math.round(run.escortHp + ESCORT_MAX_HP * escortPct));
-    const escortHpDelta = run.escortHp - escortHpBefore;
+    run.vipHp = Math.min(VIP_MAX_HP, Math.round(run.vipHp + VIP_MAX_HP * vipPct));
+    const vipHpDelta = run.vipHp - vipHpBefore;
     // D&D-style: limited abilities (GUARD, TAUNT, SALVAGE) refill on rest.
     refillAbilityUsesOnRest();
 
@@ -107,19 +107,25 @@ export class RestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // Three-column table matching RunCompleteScene's HP layout: character
-    // name (with class in parens), HP/MP stats, then healing deltas in
-    // their own tinted column. Every value lines up regardless of row
-    // content length.
-    const nameColX = width / 2 - 290;
-    const hpColX = width / 2 + 50;
-    const deltaColX = width / 2 + 290;
-    let y = 300;
+    // Two-row per-character layout: row 1 is the character's name + HP +
+    // MP values; row 2 directly beneath is the healing deltas, with the
+    // HP delta aligned under the HP column and the MP delta aligned under
+    // the MP column. Putting deltas on their own row guarantees no
+    // overlap regardless of text widths.
+    const nameColX = width / 2 - 500;
+    const hpColX = width / 2 - 160;
+    const mpColX = width / 2 + 200;
+    const ROW1_TO_ROW2 = 28; // vertical gap from name/stat row to delta row
+    const BLOCK_SPACING = 60; // vertical space between character blocks
+    let y = 280;
     for (const key of run.party) {
       const def = CLASSES[key];
       const d = partyDeltas.get(key);
       const hp = run.partyHp[key] ?? def.hp;
-      const mpPart = def.mp > 0 ? `   MP ${run.partyMp[key]}/${def.mp}` : '';
+
+      // Row 1: name, HP value, MP value (for MP-having classes).
+      // HP and MP values are LEFT-aligned at their column X. Their right
+      // edges are captured below so the delta text can right-align to them.
       this.add
         .text(nameColX, y, `${def.personName} (${def.name})`, {
           fontFamily: FONT,
@@ -127,54 +133,89 @@ export class RestScene extends Phaser.Scene {
           color: '#e6e6e6',
         })
         .setOrigin(0, 0.5);
-      this.add
-        .text(hpColX, y, `HP ${hp}/${def.hp}${mpPart}`, {
+      const hpStat = this.add
+        .text(hpColX, y, `HP ${hp}/${def.hp}`, {
           fontFamily: FONT,
           fontSize: '28px',
           color: '#e6e6e6',
         })
         .setOrigin(0, 0.5);
+      const hpRightEdge = hpColX + hpStat.displayWidth;
+
+      let mpRightEdge: number | null = null;
+      if (def.mp > 0) {
+        const mpStat = this.add
+          .text(mpColX, y, `MP ${run.partyMp[key]}/${def.mp}`, {
+            fontFamily: FONT,
+            fontSize: '28px',
+            color: '#e6e6e6',
+          })
+          .setOrigin(0, 0.5);
+        mpRightEdge = mpColX + mpStat.displayWidth;
+      }
+
+      // Row 2: HP delta right-aligned to the HP value's right edge, MP
+      // delta right-aligned to the MP value's right edge. Origin (1, 0.5)
+      // so the X passed is the text's RIGHT edge, making the tail of the
+      // delta text line up with the tail of the stat above it.
       if (d) {
         const hpGain = d.hpAfter - Math.max(0, d.hpBefore);
         const mpGain = d.mpAfter - d.mpBefore;
-        const deltaParts: string[] = [];
-        if (d.revived) deltaParts.push(`REVIVED +${hpGain}`);
-        else if (hpGain > 0) deltaParts.push(`+${hpGain} HP`);
-        if (mpGain > 0) deltaParts.push(`+${mpGain} MP`);
-        if (deltaParts.length > 0) {
+        if (d.revived) {
           this.add
-            .text(deltaColX, y, deltaParts.join('  '), {
+            .text(hpRightEdge, y + ROW1_TO_ROW2, `REVIVED +${hpGain}`, {
               fontFamily: FONT,
-              fontSize: '24px',
-              color: d.revived ? '#ffdd55' : '#8aff8a',
+              fontSize: '22px',
+              color: '#ffdd55',
             })
-            .setOrigin(0, 0.5);
+            .setOrigin(1, 0.5);
+        } else if (hpGain > 0) {
+          this.add
+            .text(hpRightEdge, y + ROW1_TO_ROW2, `+${hpGain} HP`, {
+              fontFamily: FONT,
+              fontSize: '22px',
+              color: '#8aff8a',
+            })
+            .setOrigin(1, 0.5);
+        }
+        if (def.mp > 0 && mpGain > 0 && mpRightEdge !== null) {
+          this.add
+            .text(mpRightEdge, y + ROW1_TO_ROW2, `+${mpGain} MP`, {
+              fontFamily: FONT,
+              fontSize: '22px',
+              color: '#8aff8a',
+            })
+            .setOrigin(1, 0.5);
         }
       }
-      y += 44;
+
+      y += BLOCK_SPACING;
     }
+
+    // VIP block — same two-row pattern, HP only.
+    y += 10; // extra breathing room between party and VIP
     this.add
-      .text(nameColX, y + 14, 'Dr. Vey', {
+      .text(nameColX, y, 'Dr. Vey', {
         fontFamily: FONT,
         fontSize: '28px',
         color: '#f5c97b',
       })
       .setOrigin(0, 0.5);
-    this.add
-      .text(hpColX, y + 14, `HP ${run.escortHp}/${ESCORT_MAX_HP}`, {
+    const vipHpStat = this.add
+      .text(hpColX, y, `HP ${run.vipHp}/${VIP_MAX_HP}`, {
         fontFamily: FONT,
         fontSize: '28px',
         color: '#f5c97b',
       })
       .setOrigin(0, 0.5);
-    if (escortHpDelta > 0) {
+    if (vipHpDelta > 0) {
       this.add
-        .text(deltaColX, y + 14, `+${escortHpDelta} HP`, {
+        .text(hpColX + vipHpStat.displayWidth, y + ROW1_TO_ROW2, `+${vipHpDelta} HP`, {
           fontFamily: FONT,
-          fontSize: '24px',
+          fontSize: '22px',
           color: '#8aff8a',
         })
-        .setOrigin(0, 0.5);
+        .setOrigin(1, 0.5);
     }
 
     const btn = this.add

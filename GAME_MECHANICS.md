@@ -8,9 +8,9 @@ If you change a number in the data files, update the relevant row here.
 
 ## Combat model
 
-- **ATB (Active Time Battle)** — each unit has an ATB gauge. `ATB_MAX = 100`, filled at `ATB_RATE = 9` per tick, modulated by the unit's `speed`. When a party member's gauge fills, combat pauses and the action menu opens.
-- **Party of 3** (leader always included) + **escort** (Dr. Vey, 35 HP, damage-only — no attacks, no actions). The escort sits in the back row; most enemies can still target them directly.
-- **Victory** — all enemies KO'd. **Defeat** — escort KO'd OR all 3 party KO'd.
+- **ATB (Active Time Battle)** — each unit has an ATB gauge. `ATB_MAX = 100`, filled at `ATB_RATE = 10` per tick, modulated by the unit's `speed`. When a party member's gauge fills, combat pauses and the action menu opens.
+- **Party of 3** (leader always included) + **VIP** (Dr. Vey, 35 HP, damage-only — no attacks, no actions). The VIP sits in the back row; most enemies can still target them directly.
+- **Victory** — all enemies KO'd. **Defeat** — VIP KO'd OR all 3 party KO'd.
 
 ### Damage formula
 
@@ -47,7 +47,8 @@ if enemy-vs-guarded (not ignoresGuard):      damage = max(1, floor(damage / 2))
 | `guarding`          | Vanguard GUARD             | Next incoming enemy hit is redirected to the guardian AND halved. `ignoresGuard` bypasses.       |
 | `shielded`          | Medic SHIELD               | Next incoming damage is halved. Works against `ignoresGuard` (e.g. Wreckwarden).                 |
 | `tauntedBy`         | Vanguard TAUNT             | Target's next **single-target** action forced onto the taunter. Full damage (no half). Works on bosses' normal attack. AoE moves (Nanite Swarm, Wreckwarden COOLANT SLAM) and Wreckwarden SHOCKWAVE ignore it. |
-| `atbModifier`       | Medic AMP / Netrunner FROSTLOCK | AMP: ally ATB fill ×2 for 1 turn. FROSTLOCK: target ATB fill ×0.5 for 2 turns.               |
+| `atbModifier`       | Netrunner FROSTLOCK        | Target ATB fill ×0.5 for 2 turns.                                                                |
+| ATB fill (direct)   | Medic AMP                  | Target's ATB gauge is set to max immediately — grants a free turn. No ongoing modifier.          |
 | `missing`           | Smoke Grenade item         | All enemies' next action is an auto-miss.                                                        |
 | Evasion (passive)   | Enemies with `evasive`     | 30% dodge vs basic physical attacks (FIGHT/SLICE/STRIKE). Abilities with `sfxKey` or `element` ignore evasion. |
 
@@ -60,7 +61,7 @@ Base stats at full health. Leader is always part of the party; the other two are
 | Class       | HP  | ATK | DEF | SPD | MP  | Canvas  | Role                         |
 | ----------- | --- | --- | --- | --- | --- | ------- | ---------------------------- |
 | Vanguard    | 70  | 12  | 8   | 4   | 0   | 96×96   | Frontline striker + tank     |
-| Netrunner   | 35  | 14  | 3   | 7   | 30  | 68×68   | Elemental magic DPS          |
+| Netrunner   | 35  | 14  | 3   | 7   | 30  | 68×68   | Elemental DPS                |
 | Medic       | 55  | 8   | 5   | 5   | 28  | 104×104 | Support + healing            |
 | Scavenger   | 45  | 10  | 4   | 8   | 0   | 68×68   | Physical crit + utility      |
 | Cybermonk   | 65  | 13  | 6   | 5   | 0   | 68×68   | Physical multi-hit           |
@@ -79,44 +80,46 @@ Base stats at full health. Leader is always part of the party; the other two are
 | Netrunner   | SURGE        | 7 MP | enemy            | 1.4×  | ⚡ surge  | ∞         | Heavy electric damage to one enemy.                                   |
 | Netrunner   | ITEM         | 0 MP | self             | —     | —        | —         |                                                                       |
 | Medic       | STRIKE       | 0 MP | enemy            | 0.4×  | —        | ∞         | Weak melee attack, no MP cost.                                        |
-| Medic       | PATCH        | 4 MP | ally or escort   | +25 HP| —        | ∞         | Heal one ally or Dr. Vey for 25 HP.                                    |
+| Medic       | PATCH        | 4 MP | ally or VIP      | +25 HP| —        | ∞         | Heal one ally or Dr. Vey for 25 HP.                                    |
 | Medic       | PULSE        | 5 MP | enemy            | 1.0×  | —        | ∞         | **Anti-machine**: 1.5× vs robotic, 0.5× vs hybrid.                     |
-| Medic       | AMP          | 6 MP | ally or escort   | —     | —        | ∞         | Doubles target's ATB fill rate for 1 turn.                            |
-| Medic       | SHIELD       | 5 MP | ally or escort   | —     | —        | ∞         | Halves damage taken by target until their next turn. Works vs Wreckwarden. |
+| Medic       | AMP          | 6 MP | ally or VIP      | —     | —        | ∞         | Fills target's ATB gauge to max — grants an immediate free turn.      |
+| Medic       | SHIELD       | 5 MP | ally or VIP      | —     | —        | ∞         | Halves damage taken by target until their next turn. Works vs Wreckwarden. |
 | Medic       | ITEM         | 0 MP | self             | —     | —        | —         |                                                                       |
 | Scavenger   | SLICE        | 0 MP | enemy            | 0.8×  | —        | ∞         | Fast melee attack, no MP cost.                                        |
 | Scavenger   | **SALVAGE**  | 0 MP | enemy            | 1.0×  | —        | **3**     | 50% chance to deal double damage, 25% chance to salvage a random item. |
 | Scavenger   | ITEM         | 0 MP | self             | —     | —        | —         |                                                                       |
 | Cybermonk   | FIGHT        | 0 MP | enemy            | 1.0×  | —        | ∞         | Basic physical attack.                                                |
-| Cybermonk   | FOCUS        | 0 MP | self             | +18 HP| —        | ∞         | Meditate to restore 18 HP to self.                                     |
+| Cybermonk   | **FOCUS**    | 0 MP | self             | +18 HP| —        | **3**     | Meditate to restore 18 HP to self.                                     |
 | Cybermonk   | **FLURRY**   | 0 MP | enemy            | 0.6×  | —        | **5**     | Three rapid strikes on one enemy. Each hit rolls damage/defense separately. |
 | Cybermonk   | ITEM         | 0 MP | self             | —     | —        | —         |                                                                       |
 
 **\* Rest-limited** — uses carry across combat encounters and refill only at a Rest scene. Tracked in `RunState.abilityUsesRemaining`.
 
+**Design rule:** every non-MP special move (anything beyond the class's basic 0-MP attack) is rest-limited. MP-gated abilities balance themselves via MP cost; 0-MP specials balance themselves via per-rest cap. Currently: GUARD 2, TAUNT 2, SALVAGE 3, FOCUS 3, FLURRY 5.
+
 ---
 
-## Escort (Dr. Vey)
+## VIP (Dr. Vey)
 
 - **35 HP**, no attacks, no ATB turn, no actions
 - Heals via Medic PATCH or Stimpak just like party members
-- Sits in the back row, but enemies with `target-escort` behavior (Wirehead, Wreckwarden) single-mindedly hunt her
-- Protecting her is the core objective — **escort HP is doubled in the final score**
+- Sits in the back row, but enemies with `target-vip` behavior (Wirehead, Wreckwarden) single-mindedly hunt them
+- Protecting them is the core objective — **VIP HP is doubled in the final score**
 
 ---
 
 ## Enemies
 
-Base stats and behavior. `scoutdrone` dodges basic melee. `naniteswarm` hits the whole party+escort every turn at 0.85× power. `wreckwarden` is the boss on the hard route.
+Base stats and behavior. `scoutdrone` dodges basic melee. `naniteswarm` hits the whole party+VIP every turn at 0.85× power. `wreckwarden` is the boss on the hard route.
 
 | Enemy          | HP  | ATK | DEF | SPD | Type    | Vulnerable | Resists       | Behavior         | Notes                                                                        |
 | -------------- | --- | --- | --- | --- | ------- | ---------- | ------------- | ---------------- | ---------------------------------------------------------------------------- |
 | Sentry         | 65  | 14  | 9   | 4   | robotic | 🔥 thermal | ❄ coolant     | random           | "fires PLASMA BOLT at …" Attacks ARE thermal-tagged — resistance/vulnerability applies. 35% chance per combat to enter FOCUS mode (locks onto one random unit until it dies, then re-rolls). |
 | Spider-Bot     | 30  | 11  | 5   | 5   | robotic | ❄ coolant  | 🔥 thermal    | random           | Fast scuttler.                                                               |
-| Wirehead       | 35  | 13  | 3   | 4   | hybrid  | ⚡ surge   | 🔥 thermal    | target-escort    | Always hunts Dr. Vey. Cybernetic skin shrugs off fire.                       |
+| Wirehead       | 35  | 13  | 3   | 4   | hybrid  | ⚡ surge   | 🔥 thermal    | target-vip       | Always hunts Dr. Vey. Cybernetic skin shrugs off fire.                       |
 | Scout Drone    | 25  | 9   | 4   | 7   | robotic | ⚡ surge   | ❄ coolant     | prefer-low-hp    | `evasive` — 30% dodge vs basic melee. Hunts wounded targets.                 |
-| Nanite Swarm   | 30  | 11  | 5   | 5   | hybrid  | 🔥 thermal | ⚡ surge      | **multi-hit**    | Hits whole party + escort each turn at 0.85× power (light damage each).      |
-| **Wreckwarden**| 85  | 20  | 9   | 6   | robotic | — (none)   | 🔥, ❄         | target-escort    | Boss. `ignoresGuard`. Three-move rotation (see below).                        |
+| Nanite Swarm   | 30  | 11  | 5   | 5   | hybrid  | 🔥 thermal | ⚡ surge      | **multi-hit**    | Hits whole party + VIP each turn at 0.85× power (light damage each).         |
+| **Wreckwarden**| 85  | 20  | 9   | 6   | robotic | — (none)   | 🔥, ❄         | target-vip       | Boss. `ignoresGuard`. Three-move rotation (see below).                        |
 
 ### Wreckwarden (boss) — move rotation
 
@@ -124,9 +127,9 @@ The boss cycles through three moves on a strict rotation:
 
 | Turn (mod 3)  | Move            | Power | Element  | Targets                                              |
 | ------------- | --------------- | ----- | -------- | ---------------------------------------------------- |
-| 1             | Normal attack   | 1.0×  | —        | Per behavior (escort by default; TAUNT can redirect) |
+| 1             | Normal attack   | 1.0×  | —        | Per behavior (VIP by default; TAUNT can redirect) |
 | 2             | **SHOCKWAVE**   | 1.0×  | ⚡ surge | Weighted random party member (3:2:1 highest-ATB / random / last damager). Also **resets target's ATB to 0**. Ignores TAUNT. |
-| 3             | **COOLANT SLAM**| 0.8×  | ❄ coolant| **AoE** — every living party member. Escort is exempt. Ignores TAUNT. |
+| 3             | **COOLANT SLAM**| 0.8×  | ❄ coolant| **AoE** — every living party member. VIP is exempt. Ignores TAUNT. |
 
 Vanguard's GUARD is useless vs Wreckwarden (`ignoresGuard: true`). TAUNT only works on the turn-1 normal attack — SHOCKWAVE and COOLANT SLAM bypass it so the boss rotation isn't neutralized. Medic SHIELD still halves.
 
@@ -134,10 +137,10 @@ Vanguard's GUARD is useless vs Wreckwarden (`ignoresGuard: true`). TAUNT only wo
 
 | Behavior        | Meaning                                                                                   |
 | --------------- | ----------------------------------------------------------------------------------------- |
-| `random`        | Picks a random target from party + escort.                                                |
-| `target-escort` | Always attacks the escort if alive; otherwise picks random.                               |
-| `prefer-low-hp` | Weighted random — lower-HP targets (party + escort) are more likely to be picked.         |
-| `multi-hit`     | Hits **everyone** (party + escort) for 0.85× power each turn.                              |
+| `random`        | Picks a random target from party + VIP.                                                   |
+| `target-vip`    | Always attacks the VIP if alive; otherwise picks random.                                  |
+| `prefer-low-hp` | Weighted random — lower-HP targets (party + VIP) are more likely to be picked.            |
+| `multi-hit`     | Hits **everyone** (party + VIP) for 0.85× power each turn.                                 |
 
 ---
 
@@ -147,7 +150,7 @@ Stored in a shared party inventory (`RunState.inventory`). Use via any party mem
 
 | Item           | Target       | Effect                                                            |
 | -------------- | ------------ | ----------------------------------------------------------------- |
-| STIMPAK        | ally/escort  | Restore 25 HP to one target.                                      |
+| STIMPAK        | ally/VIP     | Restore 25 HP to one target.                                      |
 | POWER CELL     | caster       | Restore 10 MP to one caster (Netrunner or Medic).                 |
 | ADRENALINE     | KO'd ally    | Revive a KO'd party member at 25% max HP.                         |
 | SMOKE GRENADE  | all enemies  | **All enemies miss their next action.** Single use per combat.    |
@@ -169,15 +172,17 @@ Three routes of increasing difficulty. Encounter counts are sampled per run from
 | Route        | Difficulty | Encounters          | Rest stops  | Background theme       |
 | ------------ | ---------- | ------------------- | ----------- | ---------------------- |
 | Long Highway | easy       | 5–6 (random pool)   | 2 (after 1, 3) | Overgrown highway      |
-| Transit Line | medium     | 3–4 (random pool)   | 1 (after 1) | Hollow shopping atrium |
-| Direct Line  | hard       | 2 or 3 (two variants) | 0 or 1 (variant-dependent) | Dead substation → boss arena |
+| Transit Line | medium     | 3–4 (random pool)   | 1–2 (3-enc: after 1 · 4-enc: after 0 and 2) | Hollow shopping atrium |
+| Direct Line  | hard       | 2 or 3 (two variants) | 1 (always before the boss) | Dead substation → boss arena |
 
 ### Direct Line variants
 
 Picked 50/50 at run start. Both end with the Wreckwarden boss in the substation arena.
 
-- **Variant A (2 encounters)**: Wirehead+Spider+Sentry opener → **Rest** → Wreckwarden.
-- **Variant B (3 encounters)**: Sentry+Sentry → Wirehead+Spider+Sentry → **Rest** → Wreckwarden.
+- **Variant A (2 encounters)**: Wirehead+Spider+Sentry opener → **Rest** (partial) → Wreckwarden.
+- **Variant B (3 encounters)**: Sentry+Sentry → Wirehead+Spider+Sentry → **Rest** (full, pre-boss) → Wreckwarden.
+
+The 3-encounter variant's rest is flagged `isBoss: true` on the next encounter, which upgrades the restore from the mid-route partial (50% HP/MP) to a full restore. Sims showed the 2-encounter variant already sits near band at partial restore, so only the longer variant needs the full-restore exception.
 
 ---
 
@@ -186,15 +191,16 @@ Picked 50/50 at run start. Both end with the Wreckwarden boss in the substation 
 Victory-only, computed in `src/scenes/RunCompleteScene.ts`:
 
 ```
-score = (escort HP × 2) + Σ (remaining HP of each party member)
+score = (VIP HP × 2) + Σ (remaining HP of each party member) + ROUTE_BONUS
 ```
 
-- Escort HP doubled — protecting Dr. Vey is the core mission.
+- VIP HP doubled — protecting Dr. Vey is the core mission.
 - KO'd party members contribute 0. Fully-healthy ones contribute their max HP.
 - Over-healing is clamped to max HP (no bonus).
-- No difficulty bonus, no turn/MP penalty, no item-efficiency bonus.
+- Route bonus (additive, see `src/state/leaderboard.ts`): easy **+100**, medium **+400**, hard **+800** — clearing harder content always outranks easier content.
+- No turn/MP penalty, no item-efficiency bonus.
 
-Maximum possible score for a run = `35×2 + 70 + 55 + 65 = 260` (escort + Vanguard + Medic + Cybermonk, for example). Actual ceiling depends on party picks.
+Maximum possible score for a run = `35×2 + (70 + 65 + 55) + 800 = 260 + 800 = 1060` (VIP + best-three-HP party on the hard route). Easier routes cap lower because the route bonus is smaller. The leaderboard Worker rejects any submission above **1100** (true max + 40pt buffer).
 
 ---
 

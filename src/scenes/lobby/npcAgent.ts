@@ -70,12 +70,12 @@ export interface NpcAgentConfig {
   };
   /** Override the auto-computed stat line in the dialogue modal. Use for
    *  NPCs that aren't in CLASSES (e.g. Dr. Vey, whose stats differ from
-   *  a combat class — escort-only HP pool, no attack/MP). */
+   *  a combat class — VIP-only HP pool, no attack/MP). */
   customStatLine?: string;
   /** Override the lore blurb shown below the stat line. Use for NPCs
    *  outside CLASSES. Defaults to CLASS_LORE_BLURBS[classId] when unset. */
   customLore?: string;
-  /** Role subtitle under the personal name banner (e.g. "ESCORT" for
+  /** Role subtitle under the personal name banner (e.g. "VIP" for
    *  Dr. Vey). For CLASSES-backed NPCs the subtitle auto-populates
    *  from CLASSES[classId].name; set this to show one for NPCs that
    *  aren't in CLASSES. */
@@ -143,13 +143,16 @@ export class NpcAgent {
       ...config,
     };
 
-    // Prefer the worldwalk frame-0 texture when the class has one (patrol
-    // classes — medic/scavenger/etc). Fall back to the plain rotation
-    // texture (`<classId>-<facing>`) for NPCs without a walking anim,
-    // like Dr. Vey / other static escort-style characters.
+    // Prefer the worldwalk frame-0 texture when the NPC actually patrols
+    // (medic/scavenger/etc — the walk anim will immediately take over on
+    // the next patrol leg so frame 0 isn't held). For stationary NPCs
+    // (Dr. Vey, other VIP-style characters) always use the plain
+    // rotation texture (`<classId>-<facing>`) — otherwise they freeze on
+    // a mid-stride walk frame and look stuck in animation.
+    const patrols = config.patrolAxis !== undefined;
     const walkKey = `${config.classId}-worldwalk-${this.cfg.initialFacing}-000`;
     const staticKey = `${config.classId}-${this.cfg.initialFacing}`;
-    const initialTextureKey = scene.textures.exists(walkKey) ? walkKey : staticKey;
+    const initialTextureKey = patrols && scene.textures.exists(walkKey) ? walkKey : staticKey;
     this.sprite = scene.add
       .sprite(config.x, config.y, initialTextureKey)
       .setScale(config.spriteScale ?? 2.0);
@@ -438,7 +441,7 @@ export class NpcAgent {
       // Non-recruitable NPCs (currently: Dr. Vey) get a CLOSE row and
       // a BRIEFING shortcut. BRIEFING closes this dialogue and opens
       // the shared mission-briefing modal so the player can re-read
-      // the objective any time from the escort themself.
+      // the objective any time from the VIP themself.
       const scene = this.scene;
       openDialogue(scene, {
         name: this.displayName,

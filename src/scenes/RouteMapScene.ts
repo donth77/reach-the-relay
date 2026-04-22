@@ -145,6 +145,23 @@ export class RouteMapScene extends Phaser.Scene {
     this.party = data.party ?? [];
   }
 
+  /**
+   * Deferred from BootScene — route-map UI overlays are only used
+   * here, so keeping them out of the initial boot path shortens the
+   * blank-viewport window (Vibe Jam rule 8: no loading screens).
+   * Phaser only downloads an asset once; re-entering RouteMap won't
+   * refetch.
+   */
+  preload(): void {
+    this.load.image('lobby-map-full-blur', 'assets/ui/map-full-blur.png');
+    this.load.image('ui-map-highway', 'assets/ui/map-highway.png');
+    this.load.image('ui-map-substation', 'assets/ui/map-substation.png');
+    this.load.image('ui-map-mall', 'assets/ui/map-mall.png');
+    this.load.image('ui-map-highway-blur', 'assets/ui/map-highway-blur.png');
+    this.load.image('ui-map-substation-blur', 'assets/ui/map-substation-blur.png');
+    this.load.image('ui-map-mall-blur', 'assets/ui/map-mall-blur.png');
+  }
+
   create(): void {
     const { width, height } = this.scale;
     this.cameras.main.setBackgroundColor('#0a0f14');

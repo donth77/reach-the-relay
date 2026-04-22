@@ -10,7 +10,7 @@ import {
   onSceneKeyWhenUnpaused,
   openPauseMenu,
 } from '../util/pauseMenu';
-import { getLobbyState } from '../state/lobby';
+import { getLobbyState, setLastPlayerPose } from '../state/lobby';
 import { isDebugCollisionOn, onDebugCollisionChange, log } from '../util/logger';
 import { NpcAgent, isDialogueOpen } from './lobby/npcAgent';
 import { CrewHud } from './lobby/crewHud';
@@ -116,11 +116,16 @@ export class LobbyScene extends Phaser.Scene {
   private mapBoardInteractPos?: Phaser.Math.Vector2;
   private readonly MAPBOARD_INTERACT_RANGE = 80;
   private mapBoardPromptText?: Phaser.GameObjects.Text;
+  // Relay Board — third stationary interactable on the north wall.
+  // Opens LeaderboardScene on E; returns back to Lobby on exit.
+  private relayBoardInteractPos?: Phaser.Math.Vector2;
+  private readonly RELAYBOARD_INTERACT_RANGE = 80;
+  private relayBoardPromptText?: Phaser.GameObjects.Text;
   // Lobby NPCs — patrolling recruitables + passive crew. Each entry owns
   // its sprite, patrol loop, proximity prompt, and collision rect.
   // Refreshing this list is where new NPCs land.
   private npcs: NpcAgent[] = [];
-  // Top-right HUD showing current escort + crew roster. Re-renders when
+  // Top-right HUD showing current VIP + crew roster. Re-renders when
   // recruits change (e.g. after an NPC dialogue closes).
   private crewHud?: CrewHud;
   // Portal trigger one-shot — flips true the frame the player's feet cross
@@ -156,6 +161,8 @@ export class LobbyScene extends Phaser.Scene {
     this.terminalPromptText = undefined;
     this.mapBoardInteractPos = undefined;
     this.mapBoardPromptText = undefined;
+    this.relayBoardInteractPos = undefined;
+    this.relayBoardPromptText = undefined;
     this.crewHud = undefined;
     this.portalTriggered = false;
     this.portalRefUrl = undefined;
@@ -231,7 +238,7 @@ export class LobbyScene extends Phaser.Scene {
     // Obstacle rect extends:
     // - ~30px BELOW the terminal's visible base so when the player walks
     //   up from the south they stop at roughly the keyboard level —
-    //   reads as "standing in front of the monitor with hands at the
+    //   reads as "standing in front of the monitor with handxs at the
     //   keyboard" rather than merged into the sprite.
     // - 10px wider on BOTH SIDES so the player can't squeak past the
     //   sprite's narrow silhouette on either side.
@@ -261,10 +268,9 @@ export class LobbyScene extends Phaser.Scene {
     // Side table + radio tucked against the top-right wall, just below
     // the planter. Radio sits on the lid.
     this.spawnSideTableWithRadio(1000, 350, 0.85);
-    // Supply shelf on the north wall, between the Cybermonk area and
-    // the side table. 128×199 native; tall narrow silhouette scales
+    // 128×199 native; tall narrow silhouette scales
     // cleanly at 0.5 (integer divisor → crisp nearest-neighbor).
-    this.spawnSupplyShelf(825, 325, 0.9);
+    this.spawnSupplyShelf(880, 325, 0.9);
     // Freestanding punching bag on the walkable floor just LEFT of the
     // doorway (doorway x-range 581-699). Decor only — pairs with the
     // Vanguard's punchingbag NPC idle animation so training gear is
@@ -275,7 +281,7 @@ export class LobbyScene extends Phaser.Scene {
     // those so the cushion visibly sits on the floor with the monk
     // perched on top. Depth pinned to the cushion's TOP so the monk
     // y-sorts on top of it naturally.
-    this.spawnCushion(640, 360);
+    this.spawnCushion(1100, 430);
     // Square centerpiece planter — axis-aligned with the doorway
     // (doorway center x=640) so it reads as the room's focal point.
     // Sits between the monk/cushion area (which ends ~y=360) and the
@@ -361,6 +367,73 @@ export class LobbyScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
+    // Relay Board — Opens the
+    // global leaderboard. Sprite is 166×166 native, opaque content bbox
+    // (23, 0, 143, 166) → visible 120×166. Scale 0.5 → displayed 60×83
+    // visible area, matching the mapboard's visual weight.
+    const RELAYBOARD_SCALE = 1.0;
+    const RELAYBOARD_DISPLAY_H = 166 * RELAYBOARD_SCALE;
+    const relayBoardX = 640;
+    const relayBoardFeetY = 340;
+    const openLeaderboard = () => {
+      setLastPlayerPose({
+        x: this.player.x,
+        y: this.player.y,
+        facing: this.playerFacing,
+      });
+      this.scene.start('Leaderboard', { returnScene: 'Lobby' });
+    };
+    const relayBoardImg = this.add
+      .image(relayBoardX, relayBoardFeetY, 'lobby-relayboard')
+      .setOrigin(0.5, 1)
+      .setScale(RELAYBOARD_SCALE)
+      .setDepth(relayBoardFeetY)
+      .setInteractive();
+    this.wireClickInteract(
+      relayBoardImg,
+      () => this.relayBoardPromptText?.visible === true,
+      () => openLeaderboard(),
+    );
+    // Collision covers the board + cabinet base. Extended south so
+    // the player stops a few px below the cabinet — reads as
+    // "reading the board".
+    const RELAYBOARD_COLL_W = 70;
+    const RELAYBOARD_COLL_H = 80;
+    const RELAYBOARD_COLL_EXTEND_DOWN = 15;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        relayBoardX - RELAYBOARD_COLL_W / 2,
+        relayBoardFeetY - RELAYBOARD_COLL_H,
+        RELAYBOARD_COLL_W,
+        RELAYBOARD_COLL_H + RELAYBOARD_COLL_EXTEND_DOWN,
+      ),
+    );
+    this.relayBoardInteractPos = new Phaser.Math.Vector2(relayBoardX, relayBoardFeetY + 20);
+    this.relayBoardPromptText = this.add
+      .text(
+        relayBoardX,
+        relayBoardFeetY - Math.round(RELAYBOARD_DISPLAY_H) + 10,
+        interactPromptText(),
+        {
+          fontFamily: FONT,
+          fontSize: '16px',
+          color: '#8aff8a',
+          stroke: '#000000',
+          strokeThickness: 3,
+        },
+      )
+      .setOrigin(0.5, 1)
+      .setDepth(99998)
+      .setVisible(false);
+    this.tweens.add({
+      targets: this.relayBoardPromptText,
+      y: this.relayBoardPromptText.y - 4,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
     // Register per-leader walking animations for classes that have them.
     // Vanguard has shield-less lobbywalk anims; others fall back to static
     // rotation images (no walking animation yet).
@@ -373,14 +446,27 @@ export class LobbyScene extends Phaser.Scene {
     // doorway boundary so the sprite is fully on the floor.
     const SPAWN_X = 640;
     const SPAWN_FEET_Y = 700;
-    // Convert desired FEET position → sprite CENTER position using the
-    // same 0.25 × displayHeight offset the movement code uses.
+    // If we have a saved pose (e.g. we just returned from Leaderboard),
+    // restore it instead of snapping to the doorway. Pose is stored as
+    // the raw sprite x/y (already includes the displayHeight offset),
+    // so we don't re-apply the feet→center shift.
+    const savedPose = getLobbyState().lastPlayerPose;
     const scale = LOBBY_SCALE[this.leaderKey] ?? DEFAULT_PLAYER_SCALE;
-    this.playerFacing = 'north';
+    const startFacing = savedPose?.facing ?? 'north';
+    this.playerFacing = startFacing;
     this.player = this.add
-      .sprite(SPAWN_X, SPAWN_FEET_Y, this.idleTextureKey('north'))
+      .sprite(
+        savedPose?.x ?? SPAWN_X,
+        savedPose?.y ?? SPAWN_FEET_Y,
+        this.idleTextureKey(startFacing),
+      )
       .setScale(scale);
-    this.player.y = SPAWN_FEET_Y - this.player.displayHeight * 0.25;
+    if (!savedPose) {
+      this.player.y = SPAWN_FEET_Y - this.player.displayHeight * 0.25;
+    } else {
+      // Consume the pose — next fresh entry to Lobby spawns at the doorway.
+      setLastPlayerPose(null);
+    }
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     this.spawnNpcs();
@@ -445,6 +531,14 @@ export class LobbyScene extends Phaser.Scene {
       const feetX = this.player.x;
       const feetY = this.player.y + feetYOffset;
 
+      // Terminal takes priority over NPCs when both are in range — the
+      // terminal is the deploy gate, and players hugging an NPC near it
+      // shouldn't have to step away to get to the run.
+      if (this.isPlayerNearTerminal()) {
+        openTerminal();
+        return;
+      }
+
       // Collect every in-range interactable with its distance² from
       // the player's feet. Winner = smallest distance.
       let best: { run: () => void; dist2: number } | null = null;
@@ -456,15 +550,26 @@ export class LobbyScene extends Phaser.Scene {
         const d2 = (feetX - cx) ** 2 + (feetY - cy) ** 2;
         if (!best || d2 < best.dist2) best = { run: () => npc.interact(), dist2: d2 };
       }
-      if (this.isPlayerNearTerminal() && this.terminalInteractPos) {
-        const d2 =
-          (feetX - this.terminalInteractPos.x) ** 2 + (feetY - this.terminalInteractPos.y) ** 2;
-        if (!best || d2 < best.dist2) best = { run: openTerminal, dist2: d2 };
-      }
       if (this.isPlayerNearMapBoard() && this.mapBoardInteractPos) {
         const d2 =
           (feetX - this.mapBoardInteractPos.x) ** 2 + (feetY - this.mapBoardInteractPos.y) ** 2;
         if (!best || d2 < best.dist2) best = { run: openMap, dist2: d2 };
+      }
+      if (this.isPlayerNearRelayBoard() && this.relayBoardInteractPos) {
+        const d2 =
+          (feetX - this.relayBoardInteractPos.x) ** 2 + (feetY - this.relayBoardInteractPos.y) ** 2;
+        if (!best || d2 < best.dist2)
+          best = {
+            run: () => {
+              setLastPlayerPose({
+                x: this.player.x,
+                y: this.player.y,
+                facing: this.playerFacing,
+              });
+              this.scene.start('Leaderboard', { returnScene: 'Lobby' });
+            },
+            dist2: d2,
+          };
       }
       if (best) {
         best.run();
@@ -720,6 +825,9 @@ export class LobbyScene extends Phaser.Scene {
     if (this.mapBoardPromptText) {
       this.mapBoardPromptText.setVisible(this.isPlayerNearMapBoard() && !anyNpcInRange);
     }
+    if (this.relayBoardPromptText) {
+      this.relayBoardPromptText.setVisible(this.isPlayerNearRelayBoard() && !anyNpcInRange);
+    }
 
     // Mobile SELECT button: only visible when tapping it would actually
     // do something — any NPC / terminal / map board in range, or party
@@ -731,6 +839,7 @@ export class LobbyScene extends Phaser.Scene {
         anyNpcInRange ||
         this.isPlayerNearTerminal() ||
         this.isPlayerNearMapBoard() ||
+        this.isPlayerNearRelayBoard() ||
         deployFallbackReady;
       this.mobileSelectBg.setVisible(canSelect);
       this.mobileSelectLabel.setVisible(canSelect);
@@ -860,6 +969,15 @@ export class LobbyScene extends Phaser.Scene {
     const dx = this.player.x - this.mapBoardInteractPos.x;
     const dy = this.player.y + feetYOffset - this.mapBoardInteractPos.y;
     return dx * dx + dy * dy <= this.MAPBOARD_INTERACT_RANGE * this.MAPBOARD_INTERACT_RANGE;
+  }
+
+  /** Same pattern — proximity check for the leaderboard relay board. */
+  private isPlayerNearRelayBoard(): boolean {
+    if (!this.relayBoardInteractPos || !this.player) return false;
+    const feetYOffset = this.player.displayHeight * 0.25;
+    const dx = this.player.x - this.relayBoardInteractPos.x;
+    const dy = this.player.y + feetYOffset - this.relayBoardInteractPos.y;
+    return dx * dx + dy * dy <= this.RELAYBOARD_INTERACT_RANGE * this.RELAYBOARD_INTERACT_RANGE;
   }
 
   /**
@@ -1143,9 +1261,9 @@ export class LobbyScene extends Phaser.Scene {
     // filling that slot instead of leaving the spot empty.
     const playerIs = (classId: string) => this.leaderKey === classId;
 
-    // Dr. Vey — the escort. Non-recruitable, always present (only one
-    // escort exists for now and it's fixed to Dr. Vey; no way to swap
-    // escorts in the lobby yet). Stands south-facing just to the right
+    // Dr. Vey — the VIP. Non-recruitable, always present (only one
+    // VIP exists for now and it's fixed to Dr. Vey; no way to swap
+    // VIPs in the lobby yet). Stands south-facing just to the right
     // of the map board so they're visible on the player's natural path
     // from the doorway up toward the terminal. Stats + lore are passed
     // explicitly since Dr. Vey isn't in CLASSES.
@@ -1266,15 +1384,15 @@ export class LobbyScene extends Phaser.Scene {
       this.obstacles.push(netrunner.collisionRect);
     }
 
-    // Cybermonk — stationary cross-legged meditation in the top-center
+    // Cybermonk — stationary cross-legged meditation in the top-right
     // of the room, facing south so the breathing loop reads to the
     // player as they approach from the doorway.
     if (!playerIs('cybermonk')) {
       this.registerWalkAnims('cybermonk');
       const cybermonk = new NpcAgent(this, {
         classId: 'cybermonk',
-        x: 640,
-        y: 270,
+        x: 1100,
+        y: 340,
         initialFacing: 'south',
         recruitable: true,
         // The cushion prop + monk's own collision rect push the player

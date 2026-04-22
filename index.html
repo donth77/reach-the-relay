@@ -4,13 +4,70 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Reach the Relay</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap"
-      rel="stylesheet"
+
+    <!-- Primary meta -->
+    <meta
+      name="description"
+      content="Post-AI-collapse party VIP-protection RPG. Pick a leader, recruit a crew, and guide Dr. Vey through three routes to the Relay. SNES-style ATB combat, built for Vibe Jam 2026."
     />
+    <meta name="author" content="Tom Donohue" />
+    <meta name="theme-color" content="#0a0a0a" />
+
+    <!-- Open Graph (Facebook, Discord, LinkedIn, etc.) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Reach the Relay" />
+    <meta
+      property="og:description"
+      content="Post-AI-collapse party VIP-protection RPG. SNES-style ATB combat. Built for Vibe Jam 2026."
+    />
+    <meta property="og:image" content="./og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Reach the Relay" />
+    <meta
+      name="twitter:description"
+      content="Post-AI-collapse party VIP-protection RPG. SNES-style ATB combat. Built for Vibe Jam 2026."
+    />
+    <meta name="twitter:image" content="./og-image.png" />
+
+    <!-- Favicon — drop a favicon.png in /public when ready; 32×32 recommended -->
+    <link rel="icon" type="image/png" href="./favicon.png" />
+
+    <!-- Preload hints — kick off the fetches for the first-paint title-
+         screen assets in parallel with the JS bundle download, so by the
+         time Phaser's BootScene runs the browser has them (or nearly so)
+         already in cache. No loading screen / progress bar; just
+         shortening the blank-viewport window (Vibe Jam rule 8). -->
+    <link
+      rel="preload"
+      href="./assets/fonts/silkscreen-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="preload" href="./assets/title/bg-off.png" as="image" />
+    <link rel="preload" href="./assets/title/bg-on.png" as="image" />
+    <link rel="preload" href="./assets/logo/logo-surge.png" as="image" />
+
+    <!-- Self-hosted Silkscreen (no runtime CDN fetch to Google Fonts) -->
     <style>
+      @font-face {
+        font-family: 'Silkscreen';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('./assets/fonts/silkscreen-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Silkscreen';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('./assets/fonts/silkscreen-700.woff2') format('woff2');
+      }
       html,
       body {
         margin: 0;

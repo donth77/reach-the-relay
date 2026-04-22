@@ -3,7 +3,7 @@ import type { ClassDef } from '../data/classes';
 import type { EnemyDef } from '../data/enemies';
 
 export const ATB_MAX = 100;
-export const ATB_RATE = 9;
+export const ATB_RATE = 10;
 
 export const PANEL_HEIGHT = 200;
 export const PANEL_MARGIN = 10;
@@ -21,7 +21,7 @@ export const DEPTH_WALK_FORWARD_BASE = 50000; // above everything during walk-fo
 export const DIMMED_OTHER_ALPHA = 0.3;
 export const DIMMED_PEER_ENEMY_ALPHA = 0.35;
 
-export type Side = 'party' | 'enemy' | 'escort';
+export type Side = 'party' | 'enemy' | 'vip';
 
 export interface Unit {
   id: string;
