@@ -6,11 +6,13 @@ Instructions and context for Claude Code sessions working on this project.
 
 **Reach the Relay** — a post-AI-collapse party escort RPG for Vibe Jam 2026 (submission deadline **2026-05-01 13:37 UTC**).
 
-See `README.md` for the player-facing overview. Design docs live in `.claude/`:
+See `README.md` for the player-facing overview and `GAME_MECHANICS.md` at the project root for the **authoritative reference of all combat rules, ability/enemy tables, item effects, boss rotation, and score formula** — keep that doc in sync whenever you change numbers in `src/data/*.ts`.
+
+Design docs live in `.claude/`:
 
 - `concept2-escort.md` — full game concept (world, mechanics, visual direction)
 - `implementation-plan.md` — build plan + pipeline notes
-- `rules.md` — combat rule reference
+- `rules.md` — combat rule reference (older; `GAME_MECHANICS.md` is now the canonical rules doc)
 - `lobby.md`, `games.md`, `concepts.md` — supporting design notes
 
 **Jam goal: participate, not win.** Scope small, pick fun-to-build over prize-optimized. Don't suggest skipping polish that the user explicitly asked for.
@@ -26,38 +28,65 @@ See `README.md` for the player-facing overview. Design docs live in `.claude/`:
 
 ```
 src/
-  main.ts                 Phaser Game config + scene list + debug badge mount
+  main.ts                         Phaser Game config + scene list + audio-settings + debug badges
   scenes/
-    BootScene.ts          preload all assets (sprites, audio, backgrounds)
-    TitleScene.ts         placeholder "press any key" title screen (logo art TBD)
-    LeaderSelectScene.ts  leader select — pick 1 of 5 classes as the playable avatar
-    LobbyScene.ts         walkable Greenhouse — recruit 2 companions via NPC dialogue OR via terminal shortcut; escort choice here
-    RouteScene.ts         route select (3 difficulty tiers + test route)
-    JourneyScene.ts       between-encounter path animation
-    CombatScene.ts        ATB combat, the bulk of the codebase
-    RestScene.ts          between-encounter heal/revive
-    RunCompleteScene.ts   victory/defeat screen + score calc
+    BootScene.ts                  preload sprites + SFX + critical-path music + UI
+    BackgroundLoadScene.ts        parallel loader — streams the ~35 MB of route/journey music in the background while the player is on Title
+    TitleScene.ts                 attract screen + "press any key" + mute toggle (persisted to localStorage)
+    LeaderSelectScene.ts          pick 1 of 5 classes as playable avatar
+    LobbyScene.ts                 walkable Greenhouse — WASD/arrows, click-to-interact, NPC dialogue, map board, exit portal
+      lobby/npcAgent.ts           NpcAgent class (patrol state machine, proximity prompt, dialogue, click-to-interact)
+      lobby/mapModal.ts           full-screen route-map modal + "MISSION BRIEFING" shortcut
+      lobby/crewHud.ts            top-right crew/escort HUD widget
+    PartySelectScene.ts           old standalone party picker (kept as a legacy path)
+    PartySelectTerminalScene.ts   in-lobby terminal that pauses Lobby and overlays the picker
+    RouteScene.ts                 route select (3 difficulty tiers + TEST routes)
+    JourneyScene.ts               between-encounter path animation with head-portrait markers
+    CombatScene.ts                ATB combat, the bulk of the codebase
+    RestScene.ts                  between-encounter heal/revive; refills maxUsesPerRest abilities
+    RunCompleteScene.ts           victory/defeat screen + score calc
   data/
-    classes.ts            party class defs (Vanguard/Netrunner/Medic/Scavenger/Cybermonk)
-    enemies.ts            enemy defs + VULNERABILITY_GLYPH map
-    items.ts              consumables (Stimpak, Power Cell, Adrenaline, Smoke Grenade)
-    routes.ts             route defs (encounters, rest stops, bg variants, music, Y offsets)
+    classes.ts                    party class defs (Vanguard/Netrunner/Medic/Scavenger/Cybermonk); AbilityDef incl. maxUsesPerRest
+    enemies.ts                    enemy defs + VULNERABILITY_GLYPH map + signatureAoE/shockwave boss fields
+    items.ts                      consumables (Stimpak, Power Cell, Adrenaline, Smoke Grenade) + STARTING_INVENTORY
+    routes.ts                     route defs — base encounters, encounterPool, variants, rest stops, bg variants, music, Y offsets
+    briefing.ts                   mission-briefing copy (title, lead, sections, lore)
+    classBlurbs.ts                short lore lines shown in NPC dialogue modal
   state/
-    run.ts                active-run state (party, route, encounter index, HP tracking)
+    run.ts                        active-run state (party, route, encounter index, HP/MP, escort HP, inventory, abilityUsesRemaining)
+    lobby.ts                      pre-run state (leader, recruits, last lobby pose) — survives LeaderSelect → Lobby → Route transitions
   combat/
-    types.ts              Unit interface, Side type, ATB/PANEL/DEPTH/DIMMED constants
-    helpers.ts            pure helpers: calculateDamage, getUnitFacing, validTargets, validItemTargets
+    types.ts                      Unit interface, Side type, ATB/PANEL/DEPTH/DIMMED constants
+    helpers.ts                    pure helpers: calculateDamage (incl. vulnerability/resistance), getUnitFacing, validTargets, validItemTargets
+    fx.ts                         transient VFX — flashSprite, playHitShake, spawnFloatNumber, spawnDamageNumber
+  sim/
+    simBattle.ts                  headless combat simulator (no Phaser deps)
+    runSim.ts                     CLI entry — runs N simulated battles per matchup; emits a markdown report (`npm run sim`)
   util/
-    logger.ts             in-memory ring-buffer logger (L key copies to clipboard)
-    ui.ts                 shared FONT constant
-    audio.ts              stopAllMusic(scene) — defensive music-stop used by Lobby + RunComplete
+    logger.ts                     in-memory ring-buffer logger (L key copies to clipboard) + debug badge mounts
+    ui.ts                         shared FONT constant
+    audio.ts                      initAudioSettings + getVol/setVol (master/music/sfx categories) + stopAllMusic
+    music.ts                      playMusicPool — plays a random pool member, re-picks on loop end
+    musicToggle.ts                title-screen DOM mute button (48×48 a11y target, persisted to localStorage)
+    audioSettingsPanel.ts         shared volume sliders panel (used by pause menu + combat pause)
+    pauseMenu.ts                  shared ESC pause menu used by all non-title, non-combat scenes
+    briefingModal.ts              shared mission-briefing modal (Title / Lobby map / Dr. Vey NPC)
+    headCrop.ts                   per-class face-crop rects for compact portraits (HEAD_CROP_BY_CLASS)
+    bag.ts                        grab-bag RNG — shuffles a pool, cycles without repeats
+    portal.ts                     Vibe Jam 2026 webring integration (entry detection + exit-URL builder)
+    rexGlobal.ts                  side-effect import — exposes Phaser as window.Phaser before rex-plugins load
 public/
   assets/
-    sprites/              SpriteCook-generated sprites + extracted animation frames
-    audio/music/          Suno-generated music tracks
-    audio/sfx/            ElevenLabs-generated SFX
-    backgrounds/combat/   Combat backgrounds (AI-generated)
-    _review/              TEMP folder for asset previews; gitignored, delete when done
+    sprites/                      sprites + extracted animation frames (party/, enemies/, npcs/, props/, vfx/)
+    audio/music/                  music tracks (keys use `music-<id>`)
+    audio/sfx/                    SFX (keys use `sfx-<id>`)
+    backgrounds/combat/           combat backgrounds — `<route>.webp` + `<route>_<theme>.webp` variants + `.backup.webp`
+    backgrounds/lobby/            lobby backgrounds
+scripts/
+  process_sheet.py                PIL helper for splitting SpriteCook animation webp outputs into PNG frames
+sprite-dev/                       working folder, gitignored (whole folder)
+  _review/                        TEMP folder for asset previews; gitignored, delete when user has picked
+  unused/                         moved-out backups of overwritten/superseded sprites
 ```
 
 ## Conventions
@@ -70,12 +99,14 @@ public/
 
 ### Music
 
-- Tracks preloaded in `BootScene` with key `music-<id>`
-- Each route has `musicKeys: string[]` (randomly picked per combat); boss encounters can set `bossMusicKey` on enemy def to override
-- Single "currently playing" track tracked via `this.registry.get('currentRouteMusic')`
-- `music-main-theme` (`main-theme.mp3`) plays on `TitleScene`
-- `music-lobby-theme` (`lobby-theme.mp3`) plays on `LeaderSelectScene` / Lobby / Route
-- **`RunCompleteScene` and `LeaderSelectScene` stop ANY playing `music-*` sound on enter** via `stopAllMusic(this)` from `util/audio.ts` (defensive — registry tracking can desync if sounds were started without setting it). Leader Select then starts main theme. Same defensive pattern lives in `CombatScene` when switching tracks.
+- Tracks preloaded in `BootScene` (critical-path) or `BackgroundLoadScene` (streaming in parallel with Title) with key `music-<id>`
+- **All music playback goes through `playMusicPool(scene, pool, volume)` in `util/music.ts`** — it filters `pool` to cache-hit keys, picks one at random, and re-picks another pool member when the track loops. Directly calling `scene.sound.add('music-...')` bypasses the audio category volume and pool rotation.
+- If the currently-playing track is a member of the new pool, `playMusicPool` is a no-op (keeps music going across scene re-entries)
+- Each route has `musicKeys: string[]` (pool); boss encounters override via `bossMusicKey` on `EnemyDef`
+- `music-main-theme` plays on `TitleScene` (gated by the DOM mute toggle — `isTitleMusicMuted()`)
+- `music-lobby-theme` plays on `LeaderSelectScene` / Lobby / Route
+- **Audio categories** (`master` / `music` / `sfx`): `util/audio.ts` tracks per-category volume, persisted to localStorage as `audio:<cat>`, re-read by Phaser via the registry. `getVol(cat)` / `setVol(cat, v)` is the only API. `effectiveMult()` gives music `master × music`; sfx gets `master × sfx`.
+- `stopAllMusic(scene)` in `util/audio.ts` is a defensive sweep used by scenes that want a guaranteed silent start (RunComplete, LeaderSelect, CombatScene track-swap) — registry tracking can desync if sounds were started outside `playMusicPool`
 
 ### SFX
 
@@ -115,6 +146,17 @@ public/
 - Nanite's multi-hit behavior uses `playFloatyAttack` wrapped around the swarm-all-party logic
 - `TWEEN_IDLE_UNITS` set in `CombatScene` enables the vertical bob tween alongside the frame-based idle anim
 
+### Lobby (walkable Greenhouse)
+
+- Walkable polygon + obstacle rects — movement lives in `LobbyScene.update()`; point-in-polygon tests happen every frame
+- NPCs are owned by `NpcAgent` (`scenes/lobby/npcAgent.ts`): each instance handles sprite, patrol state machine, proximity prompt, collision rect, dialogue, and click-to-interact. Adding an NPC is ~5 lines in `spawnNpcs()`.
+- **Interactables support mouse click as an alternative to E/Enter/Space.** `LobbyScene.wireClickInteract(target, inRange, activate)` wires pointerover/pointerdown + toggles the DOM cursor to `pointer` when in range. NPCs use `NpcAgent.enableClickInteract(canInteract)` — the canInteract closure typically returns `npc.isPromptVisible()` so only the closest in-range NPC responds.
+- **"Closest wins" for overlapping prompts**: when multiple interactables (NPCs, map board, terminal) are in range, only the closest one shows its `▼ E` prompt. `updateNpcPrompts` + the prop prompt gates use this rule so the visible affordance always matches what pressing E would trigger.
+- **Pre-run state lives in `state/lobby.ts`** — leader id, recruited set, last player pose. Survives LeaderSelect → Lobby → PartySelectTerminal round-trips so the player doesn't snap back to spawn.
+- **`PartySelectTerminalScene` pauses (not stops) LobbyScene** — so NPC patrol state, player position, and music survive intact across the overlay
+- `pauseMenu.ts` is the shared ESC menu for non-combat scenes. Scenes call `installPauseMenuEsc(this, { shouldBlockEsc: () => ... })` — the predicate blocks ESC from opening the menu when another modal (dialogue, map, briefing) owns the key.
+- **Vibe Jam webring** (`util/portal.ts`): `?portal=true` query param skips Title/LeaderSelect/PartySelect and drops the player straight into Lobby with a default party (Vanguard leader + Medic + Scavenger). An exit portal prop in the Lobby redirects to `vibejam.cc/portal/2026` with identity query params.
+
 ### Combat flow gotchas
 
 - `case 'slow'` (FROSTLOCK) **must `return` early** after `playFullAttackSequence` to skip the default finalize. Earlier versions ran both in parallel, causing `checkEndConditions` to fire before impact → missed victory detection. Same pattern applies to any future case that uses `playFullAttackSequence` from `executeAbility`.
@@ -124,7 +166,8 @@ public/
 - **Path-overlap dim**: when an enemy walks through the party to attack the escort, ALL living party members are dimmed for the whole sequence (set to `DIMMED_OTHER_ALPHA = 0.3`). Implementation in `playFullAttackSequence`'s `pathOverlapTargets` block. The escort itself is NOT dimmed (filter is `p.side === 'party'`).
 - Enemy HP bars fade out 2.5s after last damage. `beginEnemyTurn` hides every **other** enemy's HP bar before the attacker starts, so a lingering bar from a recent hit isn't visible during a different enemy's attack.
 - The `L` key hotkey for copy-log is registered per-scene (currently only in CombatScene).
-- **`maxUsesPerRest` abilities (GUARD, TAUNT, SALVAGE)**: use counters live on `RunState.abilityUsesRemaining` (keyed as `${classId}:${abilityId}`), **not** on the combat scene. They persist across encounters and are only refilled by `refillAbilityUsesOnRest()` from `RestScene`. Don't accidentally reset them on combat scene create.
+- **`maxUsesPerRest` abilities (GUARD 2, TAUNT 2, SALVAGE 3, FLURRY 5)**: use counters live on `RunState.abilityUsesRemaining` (keyed as `${classId}:${abilityId}`), **not** on the combat scene. They persist across encounters and are only refilled by `refillAbilityUsesOnRest()` from `RestScene`. Don't accidentally reset them on combat scene create.
+- **FLURRY crit**: the description says "can crit" but `case 'flurry'` currently passes `crit=false` to `applyDamage` and `calculateDamage` doesn't roll crits. If we want per-hit crits, they have to be added inside the `fireHit` loop — regular damage abilities roll 15%, SALVAGE rolls 20%.
 
 ### Score
 
@@ -197,19 +240,25 @@ Add new `log(...)` calls at any point you suspect timing or state issues. The lo
 ## Commands you'll use
 
 ```bash
-npx tsc --noEmit                    # typecheck (the test suite, basically)
-npm run dev                         # vite dev server
-npm run build                       # tsc + production build
+npm run dev                         # vite dev server at :5173
+npm run build                       # tsc + production build (dist/)
+npm run preview                     # serve the production build
+npm run typecheck                   # = npx tsc --noEmit (the test suite, basically)
+npm run lint                        # eslint src
+npm run format                      # prettier --write .
+npm run format:check                # prettier --check .
+npm run sim                         # headless combat sim → markdown report (see src/sim/)
 ```
 
-No lint/format step currently. No test suite.
+Typecheck + eslint + prettier + a headless combat simulator are the quality gates — there is no unit-test suite.
 
 ## Don'ts
 
-- **Don't auto-delete assets from `public/assets/_review/`** or the old animation frame folders without explicit user confirmation — they're harmless leftovers and user may be reviewing them
+- **Don't auto-delete assets from `sprite-dev/_review/` or `sprite-dev/unused/`** — they're out-of-tree working files the user may still be reviewing or keeping as backup
 - **Don't suggest skipping animation polish** — user has explicitly called this out
 - **Don't commit `.env` / `.env.local` or real API keys** — `.env.example` is the shared doc
 - **Don't regenerate assets when a user has uploaded their own** — check before calling `generate_game_art` if user referenced an asset; ask for the `asset_id`
+- **Dr. Vey's gender is intentionally ambiguous** — use `they/them/their/themself` in all player-visible copy, NPC dialogue, and code comments referring to the escort. Never `he/him/his` or `she/her/hers`. Same convention applies to new cutscene/briefing/dialogue text.
 
 ## User profile
 

@@ -54,7 +54,12 @@ export interface SimConfig {
 export interface RouteEncounter {
   enemyIds: string[];
   enemyOverrides?: Partial<Pick<EnemyDef, 'hp' | 'attack' | 'defense' | 'speed'>>; // applied to the boss-tier enemy if present
-  isBoss?: boolean;
+  isBoss?: boolean; // marks boss for win-reporting (bossWon stat)
+  // When true, the rest stop IMMEDIATELY before this encounter performs
+  // a full HP/MP/escort restore (mirrors the game's `isBoss` flag in
+  // routes.ts, but decoupled from win-reporting so a rest-scenario can
+  // be tweaked without affecting the boss-win metric).
+  fullPreRest?: boolean;
 }
 
 export interface RouteConfig {
@@ -521,7 +526,7 @@ function executeParty(
       break;
   }
   // Guard and shield resolve at start of actor's next turn — handled in turn prep.
-  units; // satisfy lint
+  void units;
 }
 
 function pickShockwaveTarget(enemy: SimUnit, living: SimUnit[], rng: RNG): SimUnit {
@@ -850,11 +855,23 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
     if (enc.isBoss) bossWon = true;
     // Rest after this encounter? Heal partially and refill limited abilities.
     if (restAfter.has(i)) {
+      // Mirror RestScene.ts. Default rest is 50% HP / 50% MP / 25% KO
+      // revive. If the NEXT encounter is flagged `fullPreRest`, upgrade
+      // to a full restore (the "last camp before the boss" beat).
+      // Keeps mid-route rests strategic while making pre-boss rests a
+      // proper recovery moment. Decoupled from `isBoss` so the sim can
+      // report boss-win stats without automatically triggering a full
+      // rest on every boss (which the game doesn't do either).
+      const next = config.encounters[i + 1];
+      const preBoss = next?.fullPreRest === true;
+      const hpPct = preBoss ? 1.0 : 0.5;
+      const mpPct = preBoss ? 1.0 : 0.5;
+      const escortPct = preBoss ? 1.0 : 0.15;
       for (const p of party) {
-        if (p.ko) p.hp = Math.max(1, Math.round(p.maxHp * 0.25));
-        else p.hp = Math.min(p.maxHp, Math.round(p.hp + p.maxHp * 0.3));
+        if (p.ko) p.hp = preBoss ? p.maxHp : Math.max(1, Math.round(p.maxHp * 0.25));
+        else p.hp = Math.min(p.maxHp, Math.round(p.hp + p.maxHp * hpPct));
         p.ko = false;
-        if (p.maxMp > 0) p.mp = Math.min(p.maxMp, Math.round(p.mp + p.maxMp * 0.2));
+        if (p.maxMp > 0) p.mp = Math.min(p.maxMp, Math.round(p.mp + p.maxMp * mpPct));
         // Refill limited abilities
         if (p.classDef) {
           for (const ab of p.classDef.abilities) {
@@ -862,7 +879,7 @@ export function simulateRoute(config: RouteConfig, rngSeed?: number): RouteResul
           }
         }
       }
-      escort.hp = Math.min(escort.maxHp, Math.round(escort.hp + escort.maxHp * 0.15));
+      escort.hp = Math.min(escort.maxHp, Math.round(escort.hp + escort.maxHp * escortPct));
     }
   }
 

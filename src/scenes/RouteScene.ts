@@ -119,7 +119,7 @@ export class RouteScene extends Phaser.Scene {
         .once('pointerup', () => {
           playSfx(this, 'sfx-menu-confirm', 0.5);
           startRun(route, this.party);
-          this.scene.start('Combat');
+          this.scene.start('Journey', { fromRouteStart: true });
         });
     });
 

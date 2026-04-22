@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { CLASSES, CLASS_ORDER } from '../data/classes';
-import { FONT } from '../util/ui';
+import { FONT, isTouchDevice } from '../util/ui';
 import { playMusicPool } from '../util/music';
 import { playSfx } from '../util/audio';
 import { installPauseMenuEsc } from '../util/pauseMenu';
@@ -27,6 +27,12 @@ export class PartySelectTerminalScene extends Phaser.Scene {
   // (Deploy, pause menu → Title, etc.) leaves this false so the hook
   // stops the orphaned paused Lobby.
   private headingBackToLobby = false;
+  // Set true when transitioning to RouteMap so the SHUTDOWN hook leaves
+  // the paused Lobby in place. Otherwise RouteMap→Back returns us to a
+  // terminal with no Lobby to disconnect to, and the player teleports
+  // to the doorway spawn point (because scene.start('Lobby') re-creates
+  // the scene instead of resuming it).
+  private headingToRouteMap = false;
   private portraits = new Map<string, Phaser.GameObjects.Image>();
   // Hit-area anchors (invisible). Used for pointer hover/click tracking
   // and to drive bracket-corner rendering via cardBrackets.
@@ -215,27 +221,43 @@ export class PartySelectTerminalScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.add
-      .text(width / 2, height - 50, '[ESC] DISCONNECT', {
-        fontFamily: FONT,
-        fontSize: '16px',
-        color: '#4a8a6a',
-      })
-      .setOrigin(0.5);
-
+    // On touch devices the `[ESC]` hint is meaningless — make the label
+    // itself a tappable button, remove the bracket, and bump the font.
+    const touchUi = isTouchDevice();
+    const disconnectFire = (): void => {
+      playSfx(this, 'sfx-menu-cancel', 0.3);
+      this.headingBackToLobby = true;
+      if (this.scene.isPaused('Lobby')) {
+        this.scene.resume('Lobby');
+        this.scene.stop();
+      } else {
+        this.scene.start('Lobby');
+      }
+    };
+    const disconnectIdleColor = touchUi ? '#8affaa' : '#4a8a6a';
+    const disconnectHoverColor = '#ffffff';
+    const disconnectBtn = this.add
+      .text(
+        width / 2,
+        touchUi ? height - 48 : height - 50,
+        touchUi ? 'DISCONNECT' : '[ESC] DISCONNECT',
+        {
+          fontFamily: FONT,
+          fontSize: touchUi ? '22px' : '16px',
+          color: disconnectIdleColor,
+          backgroundColor: touchUi ? '#0a2a1a' : undefined,
+          padding: touchUi ? { x: 18, y: 10 } : undefined,
+        },
+      )
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    disconnectBtn.on('pointerover', () => disconnectBtn.setColor(disconnectHoverColor));
+    disconnectBtn.on('pointerout', () => disconnectBtn.setColor(disconnectIdleColor));
+    disconnectBtn.on('pointerup', disconnectFire);
     // `once` (not `on`) — a second ESC press during the same frame (or
     // before shutdown completes) would otherwise re-fire and race the
     // scene teardown.
-    this.input.keyboard?.once('keydown-ESC', () => {
-      playSfx(this, 'sfx-menu-cancel', 0.3);
-      // Terminal was launched as a parallel scene over a PAUSED Lobby;
-      // resume the Lobby FIRST (so it's running again), then flag the
-      // exit and stop self. The SHUTDOWN hook reads the flag and
-      // leaves Lobby alone on this path.
-      this.headingBackToLobby = true;
-      this.scene.resume('Lobby');
-      this.scene.stop();
-    });
+    this.input.keyboard?.once('keydown-ESC', disconnectFire);
     // Keyboard nav. LEFT/RIGHT cycle between portraits; UP/DOWN switch
     // between portrait row and the confirm button. ENTER/SPACE/E
     // activates the focused item.
@@ -268,11 +290,13 @@ export class PartySelectTerminalScene extends Phaser.Scene {
     // memory. The normal ESC path resumes the Lobby first, so by the
     // time SHUTDOWN fires it's no longer paused and this is a no-op.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      // Only stop the paused Lobby if we're NOT heading back to it.
-      // ESC path sets headingBackToLobby + resumes the Lobby itself;
-      // other exits (Deploy, Return to Title) leave the flag false so
-      // we clean up the orphaned paused scene here.
-      if (!this.headingBackToLobby && this.scene.isPaused('Lobby')) {
+      // Only stop the paused Lobby if we're NOT planning to come back
+      // to it (ESC path) and NOT transitioning to RouteMap (player
+      // might hit Back to return here and then Disconnect — the Lobby
+      // needs to still be paused for that round-trip to resume it).
+      // Other exits (Deploy → Combat, Return to Title) leave both
+      // flags false so we clean up the orphaned paused scene here.
+      if (!this.headingBackToLobby && !this.headingToRouteMap && this.scene.isPaused('Lobby')) {
         this.scene.stop('Lobby');
       }
     });
@@ -320,10 +344,10 @@ export class PartySelectTerminalScene extends Phaser.Scene {
     if (!this.focusBrackets) return;
     this.focusBrackets.clear();
     const n = CLASS_ORDER.length;
-    let x = 0;
-    let y = 0;
-    let w = 0;
-    let h = 0;
+    let x: number;
+    let y: number;
+    let w: number;
+    let h: number;
     if (this.focusedIndex < n) {
       const key = CLASS_ORDER[this.focusedIndex];
       const hint = this.selectionHints.get(key);
@@ -424,7 +448,8 @@ export class PartySelectTerminalScene extends Phaser.Scene {
         return;
       }
       playSfx(this, 'sfx-menu-confirm', 0.5);
-      this.scene.start('Route', { party: getResolvedParty() });
+      this.headingToRouteMap = true;
+      this.scene.start('RouteMap', { party: getResolvedParty() });
     }
   }
 
@@ -533,7 +558,12 @@ export class PartySelectTerminalScene extends Phaser.Scene {
         .removeAllListeners()
         .on('pointerup', () => {
           playSfx(this, 'sfx-menu-confirm', 0.5);
-          this.scene.start('Route', { party: getResolvedParty() });
+          // RouteMapScene is the current default route picker — the
+          // older RouteScene (list-style) is preserved in the codebase
+          // but not routed to by default. To re-enable the list-style
+          // picker, swap the scene key back to 'Route'.
+          this.headingToRouteMap = true;
+          this.scene.start('RouteMap', { party: getResolvedParty() });
         });
     } else {
       this.confirmButton.setColor('#2a4a3a').setBackgroundColor('#0a1a14').disableInteractive();

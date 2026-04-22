@@ -18,7 +18,5 @@ yarn-error.log*
 .env.production
 
 .claude
-test-backgrounds
-test-sprites
 
-public/assets/_review
+sprite-dev

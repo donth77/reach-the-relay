@@ -3,7 +3,7 @@ import { CLASSES } from '../data/classes';
 import { endRun, getRun, ESCORT_MAX_HP } from '../state/run';
 import { FONT } from '../util/ui';
 import { stopAllMusic } from '../util/audio';
-import { stopMusic } from '../util/music';
+import { stopMusic, playMusicPool } from '../util/music';
 import { installPauseMenuEsc } from '../util/pauseMenu';
 import { resetLobbyForNextRun } from '../state/lobby';
 
@@ -29,10 +29,22 @@ export class RunCompleteScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const run = getRun();
 
-    // Clear the pool-based music state, then defensively stop any stray tracks.
-    stopMusic();
-    stopAllMusic(this);
-    this.registry.remove('currentRouteMusic');
+    if (this.outcome === 'victory') {
+      // Victory: the main theme is already playing from RelayCutsceneScene.
+      // `playMusicPool` no-ops when the current track is in the new pool,
+      // so the theme carries through seamlessly. Fallback: if the cutscene
+      // was skipped or didn't start the theme, start it here.
+      playMusicPool(this, ['music-main-theme'], 0.35);
+    } else {
+      // Defeat: clear existing music and play the "Signal Lost" defeat theme.
+      // The sting motif sits at the head of the track, the rest is a sparse
+      // ambient bed — one asset serves both the "loss" moment and the
+      // background under the retry/menu UI. Plays once, doesn't loop.
+      stopMusic();
+      stopAllMusic(this);
+      this.registry.remove('currentRouteMusic');
+      this.sound.play('music-signal-lost', { volume: 0.35, loop: false });
+    }
 
     this.cameras.main.setBackgroundColor(this.outcome === 'victory' ? '#14281e' : '#281414');
 
@@ -42,15 +54,15 @@ export class RunCompleteScene extends Phaser.Scene {
     this.add
       .text(width / 2, 100, title, {
         fontFamily: FONT,
-        fontSize: '48px',
+        fontSize: '64px',
         color: titleColor,
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 160, this.reason || `${run.route.name} complete.`, {
+      .text(width / 2, 175, this.reason || `${run.route.name} complete.`, {
         fontFamily: FONT,
-        fontSize: '20px',
+        fontSize: '28px',
         color: '#aaaaaa',
       })
       .setOrigin(0.5);
@@ -61,42 +73,62 @@ export class RunCompleteScene extends Phaser.Scene {
         score += run.partyHp[key] ?? 0;
       }
       this.add
-        .text(width / 2, 230, `SCORE  ${score}`, {
+        .text(width / 2, 245, `SCORE  ${score}`, {
           fontFamily: FONT,
-          fontSize: '32px',
+          fontSize: '44px',
           color: '#ffdd55',
         })
         .setOrigin(0.5);
     }
 
-    let y = 310;
+    // Two-column table so every HP value lines up in its own left-aligned
+    // column, regardless of how long the character's name + role is. Name
+    // column is left-aligned at nameColX; HP column is left-aligned at
+    // hpColX further right.
+    const nameColX = width / 2 - 290;
+    const hpColX = width / 2 + 120;
+    let y = 340;
     for (const key of run.party) {
       const def = CLASSES[key];
       const hp = run.partyHp[key] ?? 0;
       this.add
-        .text(width / 2, y, `${def.name}   HP ${hp}/${def.hp}`, {
+        .text(nameColX, y, `${def.personName} (${def.name})`, {
           fontFamily: FONT,
-          fontSize: '20px',
+          fontSize: '28px',
           color: '#e6e6e6',
         })
-        .setOrigin(0.5);
-      y += 35;
+        .setOrigin(0, 0.5);
+      this.add
+        .text(hpColX, y, `HP ${hp}/${def.hp}`, {
+          fontFamily: FONT,
+          fontSize: '28px',
+          color: '#e6e6e6',
+        })
+        .setOrigin(0, 0.5);
+      y += 44;
     }
     this.add
-      .text(width / 2, y + 10, `Dr. Vey   HP ${run.escortHp}/${ESCORT_MAX_HP}`, {
+      .text(nameColX, y + 14, 'Dr. Vey', {
         fontFamily: FONT,
-        fontSize: '20px',
+        fontSize: '28px',
         color: '#f5c97b',
       })
-      .setOrigin(0.5);
+      .setOrigin(0, 0.5);
+    this.add
+      .text(hpColX, y + 14, `HP ${run.escortHp}/${ESCORT_MAX_HP}`, {
+        fontFamily: FONT,
+        fontSize: '28px',
+        color: '#f5c97b',
+      })
+      .setOrigin(0, 0.5);
 
     const btn = this.add
       .text(width / 2, height - 80, '[ Return to Greenhouse ]', {
         fontFamily: FONT,
-        fontSize: '26px',
+        fontSize: '34px',
         color: '#8aff8a',
         backgroundColor: '#2a3a2a',
-        padding: { x: 24, y: 10 },
+        padding: { x: 28, y: 12 },
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
@@ -125,6 +157,7 @@ export class RunCompleteScene extends Phaser.Scene {
       'PartySelectTerminal',
       'Combat',
       'Route',
+      'RouteMap',
       'Journey',
       'Rest',
       'Lobby',

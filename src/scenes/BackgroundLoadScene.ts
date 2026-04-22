@@ -30,14 +30,8 @@ export class BackgroundLoadScene extends Phaser.Scene {
       'assets/audio/music/route-hollow-atrium-alt.mp3',
     );
     this.load.audio('music-route-substation', 'assets/audio/music/route-substation.mp3');
-    this.load.audio(
-      'music-route-substation-alt',
-      'assets/audio/music/route-substation-alt.mp3',
-    );
-    this.load.audio(
-      'music-route-substation-boss',
-      'assets/audio/music/route-substation-boss.mp3',
-    );
+    this.load.audio('music-route-substation-alt', 'assets/audio/music/route-substation-alt.mp3');
+    this.load.audio('music-route-substation-boss', 'assets/audio/music/route-substation-boss.mp3');
     this.load.audio('music-journey', 'assets/audio/music/journey.mp3');
     this.load.audio('music-journey-alt', 'assets/audio/music/journey-alt.mp3');
     this.load.audio('music-journey-alt2', 'assets/audio/music/journey-alt2.mp3');

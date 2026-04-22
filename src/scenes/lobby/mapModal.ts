@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
-import { FONT } from '../../util/ui';
+import { FONT, isTouchDevice } from '../../util/ui';
+import { openBriefing } from '../../util/briefingModal';
 
 /**
  * Full-screen map modal — opens when the player interacts with the
@@ -70,8 +71,11 @@ export function openMapModal(scene: Phaser.Scene): () => void {
     .setScrollFactor(0)
     .setInteractive({ useHandCursor: true });
   container.add(btnBg);
+  // Silkscreen's baseline + ascent metrics leave the visual glyph
+  // slightly below geometric center at origin (0.5, 0.5). Nudge up 2px
+  // so the X reads optically centered inside the 36x36 button.
   const btnText = scene.add
-    .text(btnCx, btnCy, 'X', {
+    .text(btnCx, btnCy - 2, 'X', {
       fontFamily: FONT,
       fontSize: '20px',
       color: '#ffffff',
@@ -79,6 +83,41 @@ export function openMapModal(scene: Phaser.Scene): () => void {
     .setOrigin(0.5, 0.5)
     .setScrollFactor(0);
   container.add(btnText);
+
+  // Briefing button — sits just below the map image, opens the shared
+  // "mission briefing" modal. Clicking it closes the map modal first
+  // (via the scene-wide pointerdown handler) then hands off to the
+  // briefing modal on the next tick.
+  let openBriefingAfterClose = false;
+  const briefingY = (height + frameH) / 2 + 14;
+  const briefingBtnPadX = 14;
+  const briefingBtnPadY = 6;
+  const briefingIdleColor = '#8affaa';
+  const briefingHoverColor = '#ffffff';
+  // Bracket-framed label + darker bordered pill on touch so mobile
+  // players read it as a tap target; desktop keeps the keyboard hint.
+  const briefingLabel = scene.add
+    .text(
+      width / 2,
+      briefingY,
+      isTouchDevice() ? '[TAP] MISSION BRIEFING' : '[B] MISSION BRIEFING',
+      {
+        fontFamily: FONT,
+        fontSize: '22px',
+        color: briefingIdleColor,
+        backgroundColor: isTouchDevice() ? '#0a2a1a' : '#05141099',
+        padding: { x: briefingBtnPadX, y: briefingBtnPadY },
+      },
+    )
+    .setOrigin(0.5, 0)
+    .setScrollFactor(0)
+    .setInteractive({ useHandCursor: true });
+  briefingLabel.on('pointerover', () => briefingLabel.setColor(briefingHoverColor));
+  briefingLabel.on('pointerout', () => briefingLabel.setColor(briefingIdleColor));
+  briefingLabel.on('pointerdown', () => {
+    openBriefingAfterClose = true;
+  });
+  container.add(briefingLabel);
 
   // Close is wired via scene-level listeners — any keypress from the
   // dismiss set or any pointerdown anywhere on the canvas triggers it.
@@ -93,13 +132,31 @@ export function openMapModal(scene: Phaser.Scene): () => void {
     scene.input.keyboard?.off('keydown-E', close);
     scene.input.keyboard?.off('keydown-ENTER', close);
     scene.input.keyboard?.off('keydown-SPACE', close);
+    scene.input.keyboard?.off('keydown-B', openBriefingNow);
     scene.input.off('pointerdown', close);
+    if (openBriefingAfterClose) {
+      openBriefingAfterClose = false;
+      // Delay a tick so the current click event fully propagates
+      // before the briefing's own scene-wide pointerdown handler
+      // attaches — otherwise this same click would close it too.
+      scene.time.delayedCall(1, () => openBriefing(scene));
+    }
+  };
+  const openBriefingNow = () => {
+    openBriefingAfterClose = true;
+    close();
   };
   scene.input.keyboard?.on('keydown-ESC', close);
   scene.input.keyboard?.on('keydown-E', close);
   scene.input.keyboard?.on('keydown-ENTER', close);
   scene.input.keyboard?.on('keydown-SPACE', close);
-  scene.input.on('pointerdown', close);
+  scene.input.keyboard?.on('keydown-B', openBriefingNow);
+  // Defer the scene-level pointerdown close binding by one tick so the
+  // click that OPENED this modal (e.g. pointerdown on the map board
+  // sprite) doesn't immediately fire this listener and close the modal.
+  scene.time.delayedCall(1, () => {
+    if (mapOpen) scene.input.on('pointerdown', close);
+  });
 
   return close;
 }

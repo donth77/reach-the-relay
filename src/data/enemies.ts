@@ -65,7 +65,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     scale: 2.5,
     hp: 65,
     attack: 14,
-    defense: 10,
+    defense: 9,
     speed: 4,
     type: 'robotic',
     vulnerability: 'thermal',
@@ -139,7 +139,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     hp: 30,
     attack: 11,
     defense: 5,
-    speed: 4,
+    speed: 5,
     type: 'hybrid',
     vulnerability: 'thermal',
     resistances: ['surge'],
@@ -177,7 +177,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     bossMusicKey: 'music-route-substation-boss',
     attackSfxKey: 'sfx-wreckwarden-attack',
     description:
-      'Apex Censor enforcer — a tower of welded warbot plating. Ignores GUARD, hunts the escort, and vents cryogenic slams at the whole party. Armor and coolant systems shrug off heat and cold alike.',
+      'Apex Censor enforcer — a tower of welded warbot plating. Ignores GUARD and TAUNT on its Shockwave and coolant slam, hunts the escort, and vents cryogenic AoE at the whole party. Armor and coolant systems shrug off heat and cold alike.',
   },
 };
 

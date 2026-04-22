@@ -91,7 +91,7 @@ export class LeaderSelectScene extends Phaser.Scene {
     // Role title — moved further below the name so the big name and the
     // small role don't crowd each other.
     this.roleText = this.add
-      .text(width / 2, height * 0.70, '', {
+      .text(width / 2, height * 0.7, '', {
         fontFamily: FONT,
         fontSize: '22px',
         color: '#aaaaaa',
@@ -111,7 +111,7 @@ export class LeaderSelectScene extends Phaser.Scene {
     // up to 70% viewport. Top origin so multi-line wrap grows DOWN
     // predictably without spilling into the confirm button area.
     this.blurbText = this.add
-      .text(width / 2, height * 0.80, '', {
+      .text(width / 2, height * 0.8, '', {
         fontFamily: FONT,
         fontSize: '17px',
         color: '#aaaaaa',

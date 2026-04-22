@@ -7,6 +7,11 @@ export interface EncounterDef {
   // Per-encounter background override. Takes priority over the route's
   // backgroundVariants pool. Used for boss-specific arenas.
   backgroundKey?: string;
+  // Marks this encounter as a boss fight. Currently only affects the
+  // rest-stop IMMEDIATELY before it: that rest fully restores HP/MP
+  // instead of partial. Keeps "mid-route rests" as partial strategic
+  // recovery while turning the pre-boss rest into a proper "last camp."
+  isBoss?: boolean;
 }
 
 export interface BackgroundVariant {
@@ -41,6 +46,11 @@ export interface RouteDef {
   encounterPoolCount?: number;
   encounterPoolCountRange?: [number, number];
   restAfter: number[];
+  // Optional: override `restAfter` based on the resolved encounter count.
+  // Use when a pool-sampled route should have more (or fewer) rest stops
+  // at higher encounter counts than at lower ones. Keyed by encounter
+  // count; if the resolved count has no entry, fall back to `restAfter`.
+  restAfterByCount?: Record<number, number[]>;
   // Optional: structural variants of the route. At run start one is picked
   // uniformly at random and its `encounters` + `restAfter` replace the base.
   // Use when a route's shape (# of encounters, rest placement) should vary run
@@ -51,6 +61,13 @@ export interface RouteDef {
   musicKeys?: string[];
   enemyYOffset?: number;
   partyYOffset?: number;
+  // Pool of short flavor lines shown under the party marker on the
+  // Journey scene. Pulled via a grab-bag so consecutive Journey legs on
+  // the same route never repeat a line until the pool cycles. Include at
+  // least as many entries as the route's max Journey-leg count (first
+  // departure + one per encounter/rest) to guarantee no repeats in a
+  // single run.
+  journeyFlavor?: string[];
 }
 
 export const ROUTES: RouteDef[] = [
@@ -90,11 +107,23 @@ export const ROUTES: RouteDef[] = [
       'bg-overgrown-highway-gas',
     ],
     musicKeys: ['music-route-overgrown-bridge', 'music-route-overgrown-bridge-alt'],
+    journeyFlavor: [
+      'Cracked asphalt winds between rusted billboards.',
+      'A cicada-drone whines somewhere in the trees.',
+      'Ivy has pulled half the guardrail back into the earth.',
+      'Dr. Vey steadies their satchel and nods onward.',
+      'Wind carries the scent of wet moss and burnt plastic.',
+      'The party skirts a tipped delivery van, door still open.',
+      'They march in silence, watching the treeline for movement.',
+      'Somewhere far off, a relay beacon pulses, faint but steady.',
+      'A crow watches from a broken streetlight, then flies.',
+      'Weeds crack the median like something clawed its way up.',
+    ],
   },
   {
     id: 'transit-line',
-    name: 'Old Transit Line',
-    subtitle: '3–4 encounters · 1 rest stop · balanced',
+    name: 'Hollow Atrium Mall',
+    subtitle: '3–4 encounters · 1–2 rest stops · balanced',
     difficulty: 'medium',
     encounters: [
       { enemies: ['spider', 'sentry'] },
@@ -117,6 +146,10 @@ export const ROUTES: RouteDef[] = [
     ],
     encounterPoolCountRange: [3, 4],
     restAfter: [1],
+    // 4-enc variant gets a second rest — sim showed the 4-encounter run
+    // dropping to 26% win with just one rest, dragging the blended avg
+    // below the "medium = beatable" target.
+    restAfterByCount: { 4: [0, 2] },
     backgroundKey: 'bg-mall-atrium',
     backgroundVariants: [
       'bg-mall-atrium',
@@ -124,13 +157,29 @@ export const ROUTES: RouteDef[] = [
       { key: 'bg-mall-atrium-dept', enemyYOffset: -10, partyYOffset: -20 },
     ],
     musicKeys: ['music-route-hollow-atrium', 'music-route-hollow-atrium-alt'],
+    journeyFlavor: [
+      'Escalators hang silent under vaulted skylights.',
+      'Shattered storefront glass crunches underfoot.',
+      'A mannequin watches from a doorway.',
+      'Water drips steadily somewhere in the dark.',
+      'Dr. Vey keeps close, satchel held tight.',
+      'Kiosk signs flicker with decades-dead ad loops.',
+      'A food-court fountain is dry, choked with leaves.',
+      'Their bootsteps echo down tiled corridors.',
+      'A breaker somewhere clicks and resets itself.',
+      'They step around a collapsed display of strollers.',
+    ],
   },
   {
     id: 'direct-line',
-    name: 'Direct Line',
-    subtitle: '2–3 encounters · brutal',
+    name: 'Dead Substation',
+    subtitle: '2–3 encounters · 0–1 rest stops · brutal',
     difficulty: 'hard',
     // Base (fallback) — matches the 2-encounter variant.
+    // NOTE: no `isBoss` flag on this wreckwarden. The 2-encounter variant
+    // is already balanced at ~49% win with the 50% rest; only the longer
+    // 3-encounter variant (defined below) needs the pre-boss full-restore
+    // exception because 2 fights of attrition makes partial rest insufficient.
     encounters: [
       { enemies: ['wirehead', 'spider', 'sentry'] },
       {
@@ -148,9 +197,9 @@ export const ROUTES: RouteDef[] = [
     variants: [
       {
         encounters: [
-          { 
-            enemies: ['wirehead', 'spider', 'sentry'],           
-           },
+          {
+            enemies: ['wirehead', 'spider', 'sentry'],
+          },
           {
             enemies: ['wreckwarden'],
             enemyYOffset: -30,
@@ -164,13 +213,19 @@ export const ROUTES: RouteDef[] = [
       },
       {
         encounters: [
-          { enemies: ['sentry', 'sentry'], 
-            },
+          { enemies: ['sentry', 'sentry'] },
           { enemies: ['wirehead', 'spider', 'sentry'] },
           {
             enemies: ['wreckwarden'],
             enemyYOffset: -30,
             backgroundKey: 'bg-dead-substation-boss',
+            // 3-encounter variant ONLY: flag the boss so the pre-boss rest
+            // upgrades from partial (50%) to full restore. Sims showed the
+            // 2-encounter variant already sits at ~49% win with partial
+            // rest, but the 3-encounter variant drops to <2% — the extra
+            // fight of attrition drains the party beyond what a partial
+            // rest can recover before the Wreckwarden.
+            isBoss: true,
           },
         ],
         restAfter: [1],
@@ -184,6 +239,17 @@ export const ROUTES: RouteDef[] = [
     musicKeys: ['music-route-substation', 'music-route-substation-alt'],
     enemyYOffset: 15,
     partyYOffset: -30,
+    journeyFlavor: [
+      'Transformer casings hum, then go still again.',
+      'Warning tape flutters, faded yellow, half-torn.',
+      'Dr. Vey flinches at a breaker snapping somewhere.',
+      'Cables droop overhead in black snarled webs.',
+      'A stepdown tower leans hard, bolts long since sheared.',
+      'The air smells like burnt copper and rain.',
+      'Glass insulators crunch like bone underfoot.',
+      "A service hatch is open. They don't look down it.",
+      'Something heavy shifts behind the next row of transformers.',
+    ],
   },
   // {
   //   id: 'test-nanite-drone',

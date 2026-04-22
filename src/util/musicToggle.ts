@@ -1,9 +1,14 @@
 import * as Phaser from 'phaser';
-import { getVol, setVol, applyCategoryVolume } from './audio';
+import { playMusicPool } from './music';
+import { stopAllMusic } from './audio';
 
-// Global music on/off toggle, mounted as a fixed-position DOM button so it
-// survives scene transitions. First click also serves as the user gesture
-// that unlocks the audio context in browsers with autoplay restrictions.
+// Title-screen-only music toggle, mounted as a fixed-position DOM button.
+// Starts / stops the title theme directly — does NOT change the global
+// audio:music registry value, so muting here won't silence the lobby or
+// combat music that starts after the player presses START.
+//
+// First click also serves as the user gesture that unlocks the audio
+// context in browsers with autoplay restrictions.
 //
 // Positioning tracks the Phaser canvas bounds (not the viewport) so the
 // button always sits inside the game frame even when the canvas is
@@ -18,6 +23,26 @@ import { getVol, setVol, applyCategoryVolume } from './audio';
 
 const BUTTON_ID = 'music-toggle';
 const INSET_PX = 12; // distance from canvas edge
+const STORAGE_KEY = 'audio:title-music-muted';
+
+/** True when the title theme should NOT be auto-played on Title enter.
+ *  Lets TitleScene gate its own playMusicPool call so we don't briefly
+ *  hear one second of music before this module stops it. */
+export function isTitleMusicMuted(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setTitleMusicMuted(muted: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, muted ? '1' : '0');
+  } catch {
+    /* localStorage unavailable */
+  }
+}
 
 let gameRef: Phaser.Game | null = null;
 let buttonEl: HTMLButtonElement | null = null;
@@ -103,17 +128,21 @@ export function mountMusicToggle(game: Phaser.Game): void {
   btn.addEventListener('click', () => {
     const scene = activeScene();
     if (!scene) return;
-    const current = getVol(scene, 'music');
-    const next = current > 0 ? 0 : 1;
-    setVol(scene, 'music', next);
-    // If we just unmuted while the audio context was locked, the click is also
-    // the gesture that unlocks it. Any music sound that was created while the
-    // category was muted sits queued at volume 0; re-apply volume once the
-    // sound manager unlocks so those sounds become audible.
-    if (next > 0 && scene.sound.locked) {
-      scene.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
-        applyCategoryVolume(scene, 'music');
-      });
+    const nowMuted = !isTitleMusicMuted();
+    setTitleMusicMuted(nowMuted);
+    if (nowMuted) {
+      // Stop only the Title theme — don't touch the global audio:music
+      // registry value, so other scenes remain unaffected.
+      stopAllMusic(scene);
+    } else {
+      // Unmute: start the Title theme. First click is also the user
+      // gesture that unlocks the audio context, so re-issue on UNLOCKED.
+      playMusicPool(scene, ['music-main-theme'], 0.35);
+      if (scene.sound.locked) {
+        scene.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
+          playMusicPool(scene, ['music-main-theme'], 0.35);
+        });
+      }
     }
     refresh();
   });
@@ -156,9 +185,8 @@ function reposition(): void {
 }
 
 function refresh(): void {
-  if (!buttonEl || !gameRef) return;
-  const v = (gameRef.registry.get('audio:music') ?? 1) as number;
-  const muted = v === 0;
+  if (!buttonEl) return;
+  const muted = isTitleMusicMuted();
   buttonEl.classList.toggle('muted', muted);
   buttonEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
   buttonEl.title = muted ? 'Unmute music' : 'Mute music';

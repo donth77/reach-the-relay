@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { FONT } from '../../util/ui';
+import { FONT, keyHintLabel } from '../../util/ui';
 import { CLASSES } from '../../data/classes';
 import { getLobbyState } from '../../state/lobby';
 
@@ -47,13 +47,25 @@ export class CrewHud {
     const top = panelY - PANEL_H / 2;
     const bot = panelY + PANEL_H / 2;
     brackets.beginPath();
-    brackets.moveTo(left, top + armLen); brackets.lineTo(left, top); brackets.lineTo(left + armLen, top); brackets.strokePath();
+    brackets.moveTo(left, top + armLen);
+    brackets.lineTo(left, top);
+    brackets.lineTo(left + armLen, top);
+    brackets.strokePath();
     brackets.beginPath();
-    brackets.moveTo(right - armLen, top); brackets.lineTo(right, top); brackets.lineTo(right, top + armLen); brackets.strokePath();
+    brackets.moveTo(right - armLen, top);
+    brackets.lineTo(right, top);
+    brackets.lineTo(right, top + armLen);
+    brackets.strokePath();
     brackets.beginPath();
-    brackets.moveTo(left, bot - armLen); brackets.lineTo(left, bot); brackets.lineTo(left + armLen, bot); brackets.strokePath();
+    brackets.moveTo(left, bot - armLen);
+    brackets.lineTo(left, bot);
+    brackets.lineTo(left + armLen, bot);
+    brackets.strokePath();
     brackets.beginPath();
-    brackets.moveTo(right - armLen, bot); brackets.lineTo(right, bot); brackets.lineTo(right, bot - armLen); brackets.strokePath();
+    brackets.moveTo(right - armLen, bot);
+    brackets.lineTo(right, bot);
+    brackets.lineTo(right, bot - armLen);
+    brackets.strokePath();
     this.container.add(brackets);
 
     // Section labels — static (don't change with state).
@@ -105,7 +117,7 @@ export class CrewHud {
     // Deploy hint — sits BELOW the HUD panel so it doesn't crowd the
     // crew list. Only visible when the party is full (3 members).
     this.deployHint = scene.add
-      .text(panelX, bot + 14, '[E] TRANSMIT & DEPLOY', {
+      .text(panelX, bot + 14, keyHintLabel('[E] DEPLOY'), {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#8affaa',
@@ -141,11 +153,9 @@ export class CrewHud {
     if (signature === this.lastSignature) return;
     this.lastSignature = signature;
 
-    // Primary identifier is the personal name (e.g. "KADE"); role
+    // Primary identifier is the personal name (e.g. "KAEL"); role
     // (e.g. "Vanguard") appears in parens after, smaller feel.
-    const leaderLabel = leader
-      ? (CLASSES[leader]?.personName.toUpperCase() ?? '')
-      : '';
+    const leaderLabel = leader ? (CLASSES[leader]?.personName.toUpperCase() ?? '') : '';
     const rows = [
       { tag: '[LEAD]', value: leaderLabel, color: '#ffcc66' },
       this.slotForRecruit(recruits[0]),
@@ -169,9 +179,7 @@ export class CrewHud {
   } {
     if (!classId) return { tag: '[—]', value: 'EMPTY', color: '#4a8a6a' };
     const def = CLASSES[classId];
-    const label = def
-      ? def.personName.toUpperCase()
-      : classId.toUpperCase();
+    const label = def ? def.personName.toUpperCase() : classId.toUpperCase();
     return { tag: '[R]', value: label, color: '#a6ffc6' };
   }
 

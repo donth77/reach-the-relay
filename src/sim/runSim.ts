@@ -290,7 +290,11 @@ const directLineVariantB: RouteConfig = {
   encounters: [
     { enemyIds: ['wirehead', 'spider', 'sentry'] },
     { enemyIds: ['spider', 'sentry'] },
-    { enemyIds: ['wreckwarden'], isBoss: true },
+    // Variant B's pre-boss rest is FULL (fullPreRest) so the party
+    // isn't drained from two mid-route fights by the time Wreckwarden
+    // appears. Variant A (2 encounters) doesn't need this exception —
+    // its partial rest already sits at ~49% win.
+    { enemyIds: ['wreckwarden'], isBoss: true, fullPreRest: true },
   ],
   startingInventory: directLineInventory,
   restAfter: [1],
@@ -311,8 +315,16 @@ function runPoolSampledRoute(
     throw new Error(`Route ${routeId} has no encounterPool`);
   }
   const pool = route.encounterPool;
-  const [lo, hi] = route.encounterPoolCountRange ?? [route.encounterPoolCount ?? 3, route.encounterPoolCount ?? 3];
-  let routeWins = 0, bossWins = 0, encSum = 0, escortHpSum = 0, escortKos = 0, hpPctSum = 0;
+  const [lo, hi] = route.encounterPoolCountRange ?? [
+    route.encounterPoolCount ?? 3,
+    route.encounterPoolCount ?? 3,
+  ];
+  let routeWins = 0,
+    bossWins = 0,
+    encSum = 0,
+    escortHpSum = 0,
+    escortKos = 0,
+    hpPctSum = 0;
   const items: Record<string, number> = {};
   for (let t = 0; t < trials; t++) {
     const count = countOverride ?? lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -329,11 +341,14 @@ function runPoolSampledRoute(
       const pick = bag[i % bag.length];
       encounters.push({ enemyIds: pick.enemies, isBoss: i === count - 1 });
     }
+    // Honor per-count rest overrides (e.g. Transit Line gets a 2nd rest
+    // only on the 4-encounter variant) so sim numbers match the real game.
+    const resolvedRestAfter = route.restAfterByCount?.[count] ?? route.restAfter;
     const result = simulateRoute({
       partyClassIds: partyIds,
       encounters,
       startingInventory: inventory,
-      restAfter: route.restAfter,
+      restAfter: resolvedRestAfter,
     });
     if (result.routeWon) routeWins++;
     if (result.bossWon) bossWins++;
@@ -356,7 +371,6 @@ function runPoolSampledRoute(
     avgItemsUsed: avgItems,
   };
 }
-
 
 function routeRow(label: string, stats: ReturnType<typeof runRouteTrials>): string {
   const band = inTargetBand(stats.routeWinRate);
@@ -387,32 +401,60 @@ lines.push(
 lines.push('');
 
 // Long Highway — pool-sampled per trial from real routes.ts pool
-lines.push(`### Long Highway (party = ${partyLabel(routeParty)}, inventory = 3/2/1/1) — pool-sampled`);
+lines.push(
+  `### Long Highway (party = ${partyLabel(routeParty)}, inventory = 3/2/1/1) — pool-sampled`,
+);
 lines.push('');
 lines.push('| Variant | Full-run win % | Avg enc cleared | Escort HP end |');
 lines.push('|---|---:|---:|---:|');
 const longHighwayInv = { stimpak: 3, powercell: 2, adrenaline: 1, smokegrenade: 1 };
 const lh5 = runPoolSampledRoute('long-highway', routeParty, longHighwayInv, 5, TRIALS);
 const lh6 = runPoolSampledRoute('long-highway', routeParty, longHighwayInv, 6, TRIALS);
-const lhBlendStats = runPoolSampledRoute('long-highway', routeParty, longHighwayInv, undefined, TRIALS);
-lines.push(`| 5 encounters | ${fmtPct(lh5.routeWinRate)} ${inTargetBand(lh5.routeWinRate)} | ${fmtNum(lh5.avgEncountersCleared, 2)} | ${fmtNum(lh5.avgEscortHpEnd)}/35 |`);
-lines.push(`| 6 encounters | ${fmtPct(lh6.routeWinRate)} ${inTargetBand(lh6.routeWinRate)} | ${fmtNum(lh6.avgEncountersCleared, 2)} | ${fmtNum(lh6.avgEscortHpEnd)}/35 |`);
-lines.push(`| **50/50 (5 or 6)** | **${fmtPct(lhBlendStats.routeWinRate)} ${inTargetBand(lhBlendStats.routeWinRate)}** | ${fmtNum(lhBlendStats.avgEncountersCleared, 2)} | ${fmtNum(lhBlendStats.avgEscortHpEnd)}/35 |`);
+const lhBlendStats = runPoolSampledRoute(
+  'long-highway',
+  routeParty,
+  longHighwayInv,
+  undefined,
+  TRIALS,
+);
+lines.push(
+  `| 5 encounters | ${fmtPct(lh5.routeWinRate)} ${inTargetBand(lh5.routeWinRate)} | ${fmtNum(lh5.avgEncountersCleared, 2)} | ${fmtNum(lh5.avgEscortHpEnd)}/35 |`,
+);
+lines.push(
+  `| 6 encounters | ${fmtPct(lh6.routeWinRate)} ${inTargetBand(lh6.routeWinRate)} | ${fmtNum(lh6.avgEncountersCleared, 2)} | ${fmtNum(lh6.avgEscortHpEnd)}/35 |`,
+);
+lines.push(
+  `| **50/50 (5 or 6)** | **${fmtPct(lhBlendStats.routeWinRate)} ${inTargetBand(lhBlendStats.routeWinRate)}** | ${fmtNum(lhBlendStats.avgEncountersCleared, 2)} | ${fmtNum(lhBlendStats.avgEscortHpEnd)}/35 |`,
+);
 lines.push('');
 const lhBlend = lhBlendStats.routeWinRate;
 
 // Transit Line — pool-sampled per trial
-lines.push(`### Transit Line (party = ${partyLabel(routeParty)}, inventory = 2/1/1/0) — pool-sampled`);
+lines.push(
+  `### Transit Line (party = ${partyLabel(routeParty)}, inventory = 2/1/1/0) — pool-sampled`,
+);
 lines.push('');
 lines.push('| Variant | Full-run win % | Avg enc cleared | Escort HP end |');
 lines.push('|---|---:|---:|---:|');
 const transitLineInv = { stimpak: 2, powercell: 1, adrenaline: 1, smokegrenade: 0 };
 const tl3 = runPoolSampledRoute('transit-line', routeParty, transitLineInv, 3, TRIALS);
 const tl4 = runPoolSampledRoute('transit-line', routeParty, transitLineInv, 4, TRIALS);
-const tlBlendStats = runPoolSampledRoute('transit-line', routeParty, transitLineInv, undefined, TRIALS);
-lines.push(`| 3 encounters | ${fmtPct(tl3.routeWinRate)} ${inTargetBand(tl3.routeWinRate)} | ${fmtNum(tl3.avgEncountersCleared, 2)} | ${fmtNum(tl3.avgEscortHpEnd)}/35 |`);
-lines.push(`| 4 encounters | ${fmtPct(tl4.routeWinRate)} ${inTargetBand(tl4.routeWinRate)} | ${fmtNum(tl4.avgEncountersCleared, 2)} | ${fmtNum(tl4.avgEscortHpEnd)}/35 |`);
-lines.push(`| **50/50 (3 or 4)** | **${fmtPct(tlBlendStats.routeWinRate)} ${inTargetBand(tlBlendStats.routeWinRate)}** | ${fmtNum(tlBlendStats.avgEncountersCleared, 2)} | ${fmtNum(tlBlendStats.avgEscortHpEnd)}/35 |`);
+const tlBlendStats = runPoolSampledRoute(
+  'transit-line',
+  routeParty,
+  transitLineInv,
+  undefined,
+  TRIALS,
+);
+lines.push(
+  `| 3 encounters | ${fmtPct(tl3.routeWinRate)} ${inTargetBand(tl3.routeWinRate)} | ${fmtNum(tl3.avgEncountersCleared, 2)} | ${fmtNum(tl3.avgEscortHpEnd)}/35 |`,
+);
+lines.push(
+  `| 4 encounters | ${fmtPct(tl4.routeWinRate)} ${inTargetBand(tl4.routeWinRate)} | ${fmtNum(tl4.avgEncountersCleared, 2)} | ${fmtNum(tl4.avgEscortHpEnd)}/35 |`,
+);
+lines.push(
+  `| **50/50 (3 or 4)** | **${fmtPct(tlBlendStats.routeWinRate)} ${inTargetBand(tlBlendStats.routeWinRate)}** | ${fmtNum(tlBlendStats.avgEncountersCleared, 2)} | ${fmtNum(tlBlendStats.avgEscortHpEnd)}/35 |`,
+);
 lines.push('');
 const tlBlend = tlBlendStats.routeWinRate;
 
@@ -426,7 +468,7 @@ lines.push(`| Transit Line (medium) | ${fmtPct(tlBlend)} | ${inTargetBand(tlBlen
 lines.push(`| Long Highway (easy) | ${fmtPct(lhBlend)} | ${inTargetBand(lhBlend)} |`);
 lines.push('');
 lines.push(
-  `_Note: easy and medium should be **above** the 50-60% band — they\'re meant to be beatable. Only the hard route (Direct Line) should target 50-60% for experienced play._`,
+  `_Note: easy and medium should be **above** the 50-60% band — they're meant to be beatable. Only the hard route (Direct Line) should target 50-60% for experienced play._`,
 );
 lines.push('');
 

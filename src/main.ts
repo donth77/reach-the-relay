@@ -8,11 +8,14 @@ import { PartySelectScene } from './scenes/PartySelectScene';
 import { PartySelectTerminalScene } from './scenes/PartySelectTerminalScene';
 import { CombatScene } from './scenes/CombatScene';
 import { RouteScene } from './scenes/RouteScene';
+import { RouteMapScene } from './scenes/RouteMapScene';
 import { RestScene } from './scenes/RestScene';
 import { RunCompleteScene } from './scenes/RunCompleteScene';
 import { JourneyScene } from './scenes/JourneyScene';
+import { RelayCutsceneScene } from './scenes/RelayCutsceneScene';
 import { mountDebugBadge, mountDebugCollisionToggle } from './util/logger';
 import { initAudioSettings } from './util/audio';
+import { initOrientationLock } from './util/orientationLock';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -34,9 +37,11 @@ const config: Phaser.Types.Core.GameConfig = {
     PartySelectScene,
     PartySelectTerminalScene,
     RouteScene,
+    RouteMapScene,
     CombatScene,
     JourneyScene,
     RestScene,
+    RelayCutsceneScene,
     RunCompleteScene,
   ],
 };
@@ -46,3 +51,4 @@ const game = new Phaser.Game(config);
 initAudioSettings(game);
 mountDebugBadge();
 mountDebugCollisionToggle();
+initOrientationLock();

@@ -121,7 +121,10 @@ function resolveRouteShape(route: RouteDef): {
     const pick = drawFromBag<EncounterDef>(bagTag, route.encounterPool);
     if (pick) out.push(pick);
   }
-  return { encounters: out, restAfter: route.restAfter };
+  // Prefer count-specific rest layout (e.g. Transit Line gets a 2nd rest
+  // only at the 4-encounter variant), falling back to the flat `restAfter`.
+  const restAfter = route.restAfterByCount?.[count] ?? route.restAfter;
+  return { encounters: out, restAfter };
 }
 
 export function getRun(): RunState {

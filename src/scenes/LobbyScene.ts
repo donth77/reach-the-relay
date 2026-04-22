@@ -2,14 +2,20 @@ import * as Phaser from 'phaser';
 // Must come before the rex import — sets up `window.Phaser`.
 import '../util/rexGlobal';
 import VirtualJoyStick from 'phaser3-rex-plugins/plugins/virtualjoystick';
-import { FONT } from '../util/ui';
+import { FONT, interactPromptText, isTouchDevice } from '../util/ui';
 import { playMusicPool } from '../util/music';
-import { installPauseMenuEsc, isPauseMenuOpen, onSceneKeyWhenUnpaused } from '../util/pauseMenu';
+import {
+  installPauseMenuEsc,
+  isPauseMenuOpen,
+  onSceneKeyWhenUnpaused,
+  openPauseMenu,
+} from '../util/pauseMenu';
 import { getLobbyState } from '../state/lobby';
 import { isDebugCollisionOn, onDebugCollisionChange, log } from '../util/logger';
 import { NpcAgent, isDialogueOpen } from './lobby/npcAgent';
 import { CrewHud } from './lobby/crewHud';
 import { openMapModal, isMapOpen } from './lobby/mapModal';
+import { isBriefingOpen } from '../util/briefingModal';
 import { CLASSES } from '../data/classes';
 import { buildPortalExitUrl, getPortalParams, isJamMode } from '../util/portal';
 
@@ -60,16 +66,26 @@ const DOORWAY_Y_BOTTOM = 870; // ~150px past image bottom (720) — long off-scr
 // top at ~718 — just a sliver of helmet visible, reads as "walked out".
 const PORTAL_TRIGGER_Y = 820;
 const WALK_POLY_POINTS: number[] = [
-  212, 311, // 1. top edge, left end
-  1067, 311, // 2. top edge, right end
-  1153, 393, // 3. right wall, top (end of top-right diagonal)
-  1153, DOORWAY_Y_TOP, // 4. right wall, bottom
-  DOORWAY_X_RIGHT, DOORWAY_Y_TOP, // 5. doorway top-right
-  DOORWAY_X_RIGHT, DOORWAY_Y_BOTTOM, // 6. doorway bottom-right (off-screen)
-  DOORWAY_X_LEFT, DOORWAY_Y_BOTTOM, // 7. doorway bottom-left (off-screen)
-  DOORWAY_X_LEFT, DOORWAY_Y_TOP, // 8. doorway top-left
-  125, DOORWAY_Y_TOP, // 9. left wall, bottom
-  125, 394, // 10. left wall, top (end of top-left diagonal)
+  212,
+  311, // 1. top edge, left end
+  1067,
+  311, // 2. top edge, right end
+  1153,
+  393, // 3. right wall, top (end of top-right diagonal)
+  1153,
+  DOORWAY_Y_TOP, // 4. right wall, bottom
+  DOORWAY_X_RIGHT,
+  DOORWAY_Y_TOP, // 5. doorway top-right
+  DOORWAY_X_RIGHT,
+  DOORWAY_Y_BOTTOM, // 6. doorway bottom-right (off-screen)
+  DOORWAY_X_LEFT,
+  DOORWAY_Y_BOTTOM, // 7. doorway bottom-left (off-screen)
+  DOORWAY_X_LEFT,
+  DOORWAY_Y_TOP, // 8. doorway top-left
+  125,
+  DOORWAY_Y_TOP, // 9. left wall, bottom
+  125,
+  394, // 10. left wall, top (end of top-left diagonal)
 ];
 
 export class LobbyScene extends Phaser.Scene {
@@ -115,6 +131,11 @@ export class LobbyScene extends Phaser.Scene {
   // arrived via the webring. Used to render a RETURN portal in the
   // left half of the doorway and redirect there instead of to vibejam.cc.
   private portalRefUrl?: string;
+  // Mobile SELECT button visuals — shown only when an interactable is
+  // in range OR the party is full (enabling the deploy shortcut).
+  // Hidden otherwise so the button doesn't advertise a no-op tap.
+  private mobileSelectBg?: Phaser.GameObjects.Arc;
+  private mobileSelectLabel?: Phaser.GameObjects.Text;
 
   constructor() {
     super('Lobby');
@@ -138,6 +159,8 @@ export class LobbyScene extends Phaser.Scene {
     this.crewHud = undefined;
     this.portalTriggered = false;
     this.portalRefUrl = undefined;
+    this.mobileSelectBg = undefined;
+    this.mobileSelectLabel = undefined;
 
     // Capture inbound ?ref= ONCE on create — if the player arrived via the
     // webring with a back-ref, we render a return portal alongside the exit.
@@ -165,6 +188,17 @@ export class LobbyScene extends Phaser.Scene {
 
     this.walkPoly = new Phaser.Geom.Polygon(WALK_POLY_POINTS);
 
+    // Interaction handlers used both by keyboard (E/Enter/Space) and by
+    // click-to-interact. Defined up-front so prop/NPC creation below can
+    // wire pointerdown handlers referencing them.
+    const openTerminal = () => {
+      // Pause (not stop) the Lobby so NPC patrol state, player
+      // position, music, etc. survive and resume cleanly on ESC.
+      this.scene.pause();
+      this.scene.launch('PartySelectTerminal');
+    };
+    const openMap = () => openMapModal(this);
+
     // Terminal — the interactable that opens PartySelect. Positioned so
     // the top of the sprite sits just below the polygon's top wall
     // (visually flush against the wall, but the sprite itself stays
@@ -183,11 +217,17 @@ export class LobbyScene extends Phaser.Scene {
     // tucked back against the wall (top of sprite partly behind it).
     const terminalX = 235;
     const terminalFeetY = 325;
-    this.add
+    const terminalImg = this.add
       .image(terminalX, terminalFeetY, 'lobby-terminal')
       .setOrigin(0.5, 1)
       .setScale(TERMINAL_SCALE)
-      .setDepth(terminalFeetY);
+      .setDepth(terminalFeetY)
+      .setInteractive();
+    this.wireClickInteract(
+      terminalImg,
+      () => this.terminalPromptText?.visible === true,
+      () => openTerminal(),
+    );
     // Obstacle rect extends:
     // - ~30px BELOW the terminal's visible base so when the player walks
     //   up from the south they stop at roughly the keyboard level —
@@ -208,11 +248,12 @@ export class LobbyScene extends Phaser.Scene {
     );
 
     // Planter bed — decorative only. Sits against the top-right section
-    // of the north wall. Scale defaults to 0.7 in spawnPlanter.
-    this.spawnPlanter(830, 360);
+    // against the south wall (walkable polygon bottom at y=656 outside
+    // the doorway), right side of the room.
+    this.spawnPlanter(885, 690, 0.85);
     // Communal table + stools, centered horizontally with the planter
     // and well clear of the doorway path (doorway x=581-699).
-    this.spawnTable(830, 560);
+    this.spawnTable(890, 540);
     // Workbench flush against the left wall. Sprite is the vertical
     // wall-oriented variant (66×141 content) so feet_x sits close to
     // the left wall at x=125.
@@ -220,13 +261,33 @@ export class LobbyScene extends Phaser.Scene {
     // Side table + radio tucked against the top-right wall, just below
     // the planter. Radio sits on the lid.
     this.spawnSideTableWithRadio(1000, 350, 0.85);
+    // Supply shelf on the north wall, between the Cybermonk area and
+    // the side table. 128×199 native; tall narrow silhouette scales
+    // cleanly at 0.5 (integer divisor → crisp nearest-neighbor).
+    this.spawnSupplyShelf(825, 325, 0.9);
+    // Freestanding punching bag on the walkable floor just LEFT of the
+    // doorway (doorway x-range 581-699). Decor only — pairs with the
+    // Vanguard's punchingbag NPC idle animation so training gear is
+    // visible even when the player is the Vanguard.
+    this.spawnPunchingBag(350, 650);
+    // Meditation cushion underneath the Cybermonk NPC (spawned at
+    // (680, 400) sprite-center, feet ~y=434). Cushion feet a bit below
+    // those so the cushion visibly sits on the floor with the monk
+    // perched on top. Depth pinned to the cushion's TOP so the monk
+    // y-sorts on top of it naturally.
+    this.spawnCushion(640, 360);
+    // Square centerpiece planter — axis-aligned with the doorway
+    // (doorway center x=640) so it reads as the room's focal point.
+    // Sits between the monk/cushion area (which ends ~y=360) and the
+    // doorway opening (y=656+), leaving walking corridors on either side.
+    this.spawnSquarePlanter(640, 545, 1);
     // Interaction anchor = keyboard level (a bit south of the terminal's
     // base so the range centers on where the player stands to interact).
     this.terminalInteractPos = new Phaser.Math.Vector2(terminalX, terminalFeetY + 20);
     // Floating "▲ E" prompt above the terminal. Hidden until the player
     // is within range. Bobs gently up-and-down on a ping-pong tween.
     this.terminalPromptText = this.add
-      .text(terminalX, terminalFeetY - Math.round(TERMINAL_DISPLAY_H) - 14, '▼ E', {
+      .text(terminalX, terminalFeetY - Math.round(TERMINAL_DISPLAY_H) - 14, interactPromptText(), {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#8aff8a',
@@ -254,11 +315,17 @@ export class LobbyScene extends Phaser.Scene {
     const MAPBOARD_DISPLAY_H = 270 * MAPBOARD_SCALE;
     const mapBoardX = 395;
     const mapBoardFeetY = 340;
-    this.add
+    const mapBoardImg = this.add
       .image(mapBoardX, mapBoardFeetY, 'lobby-mapboard')
       .setOrigin(0.5, 1)
       .setScale(MAPBOARD_SCALE)
-      .setDepth(mapBoardFeetY);
+      .setDepth(mapBoardFeetY)
+      .setInteractive();
+    this.wireClickInteract(
+      mapBoardImg,
+      () => this.mapBoardPromptText?.visible === true,
+      () => openMap(),
+    );
     // Collision rect covers the visible board footprint so the player
     // can't clip into the wall art. Extended south so they stop a few
     // px below the board's base — reads as "reading the map".
@@ -275,7 +342,7 @@ export class LobbyScene extends Phaser.Scene {
     );
     this.mapBoardInteractPos = new Phaser.Math.Vector2(mapBoardX, mapBoardFeetY + 20);
     this.mapBoardPromptText = this.add
-      .text(mapBoardX, mapBoardFeetY - Math.round(MAPBOARD_DISPLAY_H) + 10, '▼ E', {
+      .text(mapBoardX, mapBoardFeetY - Math.round(MAPBOARD_DISPLAY_H) + 10, interactPromptText(), {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#8aff8a',
@@ -372,13 +439,6 @@ export class LobbyScene extends Phaser.Scene {
     // whether that's an NPC or the terminal. Falls back to "transmit &
     // deploy from anywhere" when the party is full and nothing is in
     // range (so the player can deploy without walking to the terminal).
-    const openTerminal = () => {
-      // Pause (not stop) the Lobby so NPC patrol state, player
-      // position, music, etc. survive and resume cleanly on ESC.
-      this.scene.pause();
-      this.scene.launch('PartySelectTerminal');
-    };
-    const openMap = () => openMapModal(this);
     const tryInteract = () => {
       if (isDialogueOpen() || isMapOpen()) return;
       const feetYOffset = this.player.displayHeight * 0.25;
@@ -398,14 +458,12 @@ export class LobbyScene extends Phaser.Scene {
       }
       if (this.isPlayerNearTerminal() && this.terminalInteractPos) {
         const d2 =
-          (feetX - this.terminalInteractPos.x) ** 2 +
-          (feetY - this.terminalInteractPos.y) ** 2;
+          (feetX - this.terminalInteractPos.x) ** 2 + (feetY - this.terminalInteractPos.y) ** 2;
         if (!best || d2 < best.dist2) best = { run: openTerminal, dist2: d2 };
       }
       if (this.isPlayerNearMapBoard() && this.mapBoardInteractPos) {
         const d2 =
-          (feetX - this.mapBoardInteractPos.x) ** 2 +
-          (feetY - this.mapBoardInteractPos.y) ** 2;
+          (feetX - this.mapBoardInteractPos.x) ** 2 + (feetY - this.mapBoardInteractPos.y) ** 2;
         if (!best || d2 < best.dist2) best = { run: openMap, dist2: d2 };
       }
       if (best) {
@@ -421,9 +479,10 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     this.maybeCreateJoystick();
+    this.maybeCreateMobileHud(tryInteract);
 
     installPauseMenuEsc(this, {
-      shouldBlockEsc: () => isDialogueOpen() || isMapOpen(),
+      shouldBlockEsc: () => isDialogueOpen() || isMapOpen() || isBriefingOpen(),
     });
 
     this.setupCollisionDebug();
@@ -463,17 +522,14 @@ export class LobbyScene extends Phaser.Scene {
   private maybeCreateJoystick(): void {
     const isTouch =
       typeof window !== 'undefined' &&
-      ((navigator.maxTouchPoints ?? 0) > 0 ||
-        window.matchMedia?.('(pointer: coarse)').matches);
+      ((navigator.maxTouchPoints ?? 0) > 0 || window.matchMedia?.('(pointer: coarse)').matches);
     if (!isTouch) return;
 
     const { height } = this.scale;
     const x = 120;
     const y = height - 120;
     const radius = 70;
-    const base = this.add
-      .circle(0, 0, radius, 0x0a1820, 0.5)
-      .setStrokeStyle(3, 0x6a7fad, 0.8);
+    const base = this.add.circle(0, 0, radius, 0x0a1820, 0.5).setStrokeStyle(3, 0x6a7fad, 0.8);
     const thumb = this.add
       .circle(0, 0, radius * 0.45, 0x6a7fad, 0.8)
       .setStrokeStyle(2, 0xe6e6e6, 0.9);
@@ -488,6 +544,63 @@ export class LobbyScene extends Phaser.Scene {
     // Pin the joystick visuals to the camera (don't scroll with world).
     base.setScrollFactor(0).setDepth(9000);
     thumb.setScrollFactor(0).setDepth(9001);
+  }
+
+  /**
+   * On touch devices, paint the mobile HUD: a circular SELECT button in
+   * the bottom-right (mirrors the joystick) that runs the same
+   * closest-wins interact dispatch the E key triggers, plus a MENU
+   * button in the top-right that opens the shared pause menu (since
+   * touch devices don't have ESC). Matches the CombatScene pattern.
+   */
+  private maybeCreateMobileHud(tryInteract: () => void): void {
+    if (!isTouchDevice()) return;
+    const { width, height } = this.scale;
+
+    const selectX = width - 100;
+    const selectY = height - 120;
+    const selectRadius = 60;
+    const selectBase = this.add
+      .circle(selectX, selectY, selectRadius, 0x0a1820, 0.7)
+      .setStrokeStyle(3, 0x8aff8a, 0.9)
+      .setScrollFactor(0)
+      .setDepth(9000)
+      .setInteractive({ useHandCursor: true })
+      .setVisible(false);
+    const selectLabel = this.add
+      .text(selectX, selectY, 'SELECT', {
+        fontFamily: FONT,
+        fontSize: '18px',
+        color: '#8aff8a',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(9001)
+      .setVisible(false);
+    selectBase.on('pointerdown', () => {
+      if (isPauseMenuOpen()) return;
+      tryInteract();
+    });
+    this.mobileSelectBg = selectBase;
+    this.mobileSelectLabel = selectLabel;
+
+    this.add
+      .text(width - 18, 18, 'MENU', {
+        fontFamily: FONT,
+        fontSize: '18px',
+        color: '#e6e6e6',
+        backgroundColor: '#222a',
+        padding: { x: 14, y: 8 },
+        align: 'center',
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(9001)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerup', () => {
+        if (isDialogueOpen() || isMapOpen() || isBriefingOpen()) return;
+        if (!isPauseMenuOpen()) openPauseMenu(this);
+      });
   }
 
   update(_time: number, delta: number): void {
@@ -508,13 +621,10 @@ export class LobbyScene extends Phaser.Scene {
     const step = PLAYER_SPEED * dt;
 
     // Read inputs — cursor keys, WASD, or virtual joystick (touch devices).
-    const left =
-      !!this.cursorKeys.left?.isDown || this.wasd.A.isDown || !!this.joystick?.left;
-    const right =
-      !!this.cursorKeys.right?.isDown || this.wasd.D.isDown || !!this.joystick?.right;
+    const left = !!this.cursorKeys.left?.isDown || this.wasd.A.isDown || !!this.joystick?.left;
+    const right = !!this.cursorKeys.right?.isDown || this.wasd.D.isDown || !!this.joystick?.right;
     const up = !!this.cursorKeys.up?.isDown || this.wasd.W.isDown || !!this.joystick?.up;
-    const down =
-      !!this.cursorKeys.down?.isDown || this.wasd.S.isDown || !!this.joystick?.down;
+    const down = !!this.cursorKeys.down?.isDown || this.wasd.S.isDown || !!this.joystick?.down;
 
     // 4-way movement — only one direction active at a time. When multiple
     // keys are pressed, horizontal wins over vertical, and opposite keys
@@ -598,11 +708,32 @@ export class LobbyScene extends Phaser.Scene {
     const feetX = this.player.x;
     const feetY = this.player.y + feetYOffset;
     this.updateNpcPrompts(feetX, feetY);
+    // Prop prompts yield to NPC prompts when overlapping — e.g. standing
+    // between Dr. Vey and the map board should only show Dr. Vey's "▼ E"
+    // so the player isn't staring at two prompts with ambiguous priority.
+    // Interact dispatcher (`tryInteract`) already picks the closest target,
+    // so this is purely the visual half of that same rule.
+    const anyNpcInRange = this.npcs.some((npc) => npc.isInInteractionRange(feetX, feetY));
     if (this.terminalPromptText) {
-      this.terminalPromptText.setVisible(this.isPlayerNearTerminal());
+      this.terminalPromptText.setVisible(this.isPlayerNearTerminal() && !anyNpcInRange);
     }
     if (this.mapBoardPromptText) {
-      this.mapBoardPromptText.setVisible(this.isPlayerNearMapBoard());
+      this.mapBoardPromptText.setVisible(this.isPlayerNearMapBoard() && !anyNpcInRange);
+    }
+
+    // Mobile SELECT button: only visible when tapping it would actually
+    // do something — any NPC / terminal / map board in range, or party
+    // full so tapping fires the deploy-from-anywhere shortcut.
+    if (this.mobileSelectBg && this.mobileSelectLabel) {
+      const lobby = getLobbyState();
+      const deployFallbackReady = !!lobby.leaderId && lobby.recruited.size >= 2;
+      const canSelect =
+        anyNpcInRange ||
+        this.isPlayerNearTerminal() ||
+        this.isPlayerNearMapBoard() ||
+        deployFallbackReady;
+      this.mobileSelectBg.setVisible(canSelect);
+      this.mobileSelectLabel.setVisible(canSelect);
     }
 
     // ----- Animation / texture sync -----
@@ -700,6 +831,28 @@ export class LobbyScene extends Phaser.Scene {
     return dx * dx + dy * dy <= this.TERMINAL_INTERACT_RANGE * this.TERMINAL_INTERACT_RANGE;
   }
 
+  /**
+   * Wire a scene object (NPC sprite, terminal image, map board) for
+   * click-to-interact. Click only triggers when `inRange()` — matches the
+   * E/Enter/Space proximity gate. Cursor turns into a hand on hover only
+   * when in range so the affordance mirrors the floating "▼ E" prompt.
+   */
+  private wireClickInteract(
+    target: Phaser.GameObjects.GameObject,
+    inRange: () => boolean,
+    activate: () => void,
+  ): void {
+    target.on('pointerover', () => {
+      if (inRange()) this.input.setDefaultCursor('pointer');
+    });
+    target.on('pointerout', () => this.input.setDefaultCursor(''));
+    target.on('pointerdown', () => {
+      if (isDialogueOpen() || isMapOpen()) return;
+      if (!inRange()) return;
+      activate();
+    });
+  }
+
   /** Mirror of `isPlayerNearTerminal` for the map board hanging next to it. */
   private isPlayerNearMapBoard(): boolean {
     if (!this.mapBoardInteractPos || !this.player) return false;
@@ -767,6 +920,131 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   /**
+   * Drop a freestanding punching bag prop at the given feet position.
+   * Decor only. Sprite is 178×178 native with content bbox (56, 0, 122, 178)
+   * — tall narrow silhouette centered on the canvas. Scale 0.7 keeps
+   * it readably large next to the doorway without dominating the room.
+   */
+  /**
+   * Drop a round meditation cushion prop at the given feet position.
+   * Decor only (no collision) — pairs with the Cybermonk NPC's
+   * seated meditation idle anim. Depth pinned to the cushion's TOP so
+   * a character whose feet-y lands between the cushion's top and feet
+   * — like the Cybermonk sitting on it — renders in front naturally.
+   * Sprite is 160×160 native with content bbox (0, 24, 160, 136).
+   */
+  /**
+   * Drop a square centerpiece planter prop at the given feet position.
+   * Sprite is 166×166 native with content bbox (4, 0, 161, 166) —
+   * nearly canvas-filling. Collision covers the wooden box footprint
+   * with a small south extension so the player stops in front of it
+   * rather than clipping into the rim.
+   */
+  /**
+   * Drop a supply shelf prop on the north wall. Sprite is 128×199
+   * native (content fills the canvas). Tall wall prop — depth set to
+   * the top of the sprite so characters in front of it y-sort above,
+   * matching the workbench pattern.
+   */
+  private spawnSupplyShelf(feetX: number, feetY: number, scale = 0.5): void {
+    const contentH = Math.round(199 * scale);
+    this.add
+      .image(feetX, feetY, 'lobby-supply-shelf')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY - contentH);
+    // Collision narrow + tallish, covering the shelf footprint plus a
+    // small south extension so the player stops in front rather than
+    // clipping into the shelves.
+    const w = Math.round(120 * scale);
+    const h = Math.round(140 * scale);
+    const extendDown = 10;
+    const extendSides = 6;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - w / 2 - extendSides,
+        feetY - h,
+        w + extendSides * 2,
+        h + extendDown,
+      ),
+    );
+  }
+
+  private spawnSquarePlanter(feetX: number, feetY: number, scale = 0.6): void {
+    this.add
+      .image(feetX, feetY, 'lobby-planter-square')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY);
+    // Collision covers the wooden box + most of the foliage but leaves
+    // the top ~35 px of the sprite unblocked so the player can appear
+    // to walk "behind" the tallest leaves without getting stopped
+    // against an invisible wall at the full sprite height.
+    const w = Math.round(157 * scale);
+    const h = Math.round(120 * scale);
+    const extendDown = 12;
+    const extendSides = 14;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - w / 2 - extendSides,
+        feetY - h,
+        w + extendSides * 2,
+        h + extendDown,
+      ),
+    );
+  }
+
+  private spawnCushion(feetX: number, feetY: number, scale = 0.5): void {
+    const contentH = Math.round(112 * scale);
+    this.add
+      .image(feetX, feetY, 'lobby-cushion')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY - contentH);
+    // Collision covers the cushion's visible footprint so the player
+    // can't walk through it. Kept narrower than the full content bbox
+    // since the cushion's silhouette is round — the corners are empty
+    // pixels, and a rectangular block matching the full bbox would
+    // feel wider than it looks.
+    const collW = Math.round(120 * scale);
+    const collH = Math.round(70 * scale);
+    const extendDown = 6;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(feetX - collW / 2, feetY - collH, collW, collH + extendDown),
+    );
+  }
+
+  private spawnPunchingBag(feetX: number, feetY: number, scale = 0.7): void {
+    // Depth set to the TOP of the bag rather than its feet so the bag
+    // y-sorts as a tall standing prop — characters standing near it (the
+    // Vanguard NPC swinging at it, the player walking past) naturally
+    // render above it. Using feet-y as depth would force them behind
+    // since their feet land ABOVE the bag's base line on screen. Same
+    // pattern as spawnWorkbench.
+    const contentH = Math.round(178 * scale);
+    this.add
+      .image(feetX, feetY, 'lobby-punchingbag')
+      .setOrigin(0.5, 1)
+      .setScale(scale)
+      .setDepth(feetY - contentH);
+    // Collision covers just the weighted BASE + a bit of south extension
+    // so the player stops in front of the bag rather than clipping into
+    // the weighted disc.
+    const baseW = Math.round(44 * scale);
+    const baseH = Math.round(28 * scale);
+    const extendDown = 10;
+    const extendSides = 6;
+    this.obstacles.push(
+      new Phaser.Geom.Rectangle(
+        feetX - baseW / 2 - extendSides,
+        feetY - baseH,
+        baseW + extendSides * 2,
+        baseH + extendDown,
+      ),
+    );
+  }
+
+  /**
    * Drop the scavenger's workbench prop at the given feet position.
    * Non-interactive decor. Sized to sit against the top-right diagonal
    * wall, mirroring the terminal's top-left corner.
@@ -776,12 +1054,19 @@ export class LobbyScene extends Phaser.Scene {
   private spawnWorkbench(feetX: number, feetY: number, scale = 1, rotation = 0): void {
     // Sprite is 142×142 native — VERTICAL (wall-oriented) bench with
     // content bbox (38, 0, 104, 141) = 66×141, tall and narrow.
+    // Depth is set to the TOP of the bench rather than its feet so
+    // the workbench y-sorts as a wall prop — characters standing in
+    // front of it (scavenger NPC, the player) naturally render above
+    // it without needing a depthOverride. Using its own feet-y would
+    // force characters behind, since their feet land ABOVE the bench's
+    // base line on screen.
+    const contentH = Math.round(141 * scale);
     this.add
       .image(feetX, feetY, 'lobby-workbench')
       .setOrigin(0.5, 1)
       .setScale(scale)
       .setRotation(rotation)
-      .setDepth(feetY);
+      .setDepth(feetY - contentH);
     const w = Math.round(66 * scale);
     const h = Math.round(130 * scale);
     const extendDown = 15;
@@ -806,11 +1091,7 @@ export class LobbyScene extends Phaser.Scene {
   private spawnTable(feetX: number, feetY: number, scale = 1): void {
     // Sprite is 142×142 native with content bbox (0, 8, 142, 133) —
     // so nearly full-canvas. Round table with 4 stools around it.
-    this.add
-      .image(feetX, feetY, 'lobby-table')
-      .setOrigin(0.5, 1)
-      .setScale(scale)
-      .setDepth(feetY);
+    this.add.image(feetX, feetY, 'lobby-table').setOrigin(0.5, 1).setScale(scale).setDepth(feetY);
     const w = Math.round(130 * scale);
     const h = Math.round(100 * scale);
     const extendDown = 12;
@@ -865,21 +1146,21 @@ export class LobbyScene extends Phaser.Scene {
     // Dr. Vey — the escort. Non-recruitable, always present (only one
     // escort exists for now and it's fixed to Dr. Vey; no way to swap
     // escorts in the lobby yet). Stands south-facing just to the right
-    // of the map board so he's visible on the player's natural path
+    // of the map board so they're visible on the player's natural path
     // from the doorway up toward the terminal. Stats + lore are passed
     // explicitly since Dr. Vey isn't in CLASSES.
     const drVey = new NpcAgent(this, {
       classId: 'drvey',
-      x: 505,
+      x: 510,
       y: 290,
       initialFacing: 'south',
       recruitable: false,
       displayName: 'DR. VEY',
       customStatLine: `HP 35`,
       customLore:
-        "Scientist. Two months of field observations on AI patrol pattern shifts — the data the survivor network has been waiting on.",
+        'Scientist. Two months of field observations on AI patrol pattern shifts — the data the survivor network has been waiting on.',
       greetingLines: [
-        "My research has to reach the tower. Findings on AI patrol pattern shifts.",
+        'My research has to reach the tower. Findings on AI patrol pattern shifts.',
         "I've been trying to get this data to the Relay for two months. Don't let me die on this road.",
         "Whenever you and your crew are ready, I'll be right behind you.",
         "I can't make this walk alone. You say go, I go.",
@@ -893,13 +1174,17 @@ export class LobbyScene extends Phaser.Scene {
       this.registerWalkAnims('medic');
       const medic = new NpcAgent(this, {
         classId: 'medic',
-        x: 1000,
+        x: 1050,
         y: 525,
         patrolAxis: 'vertical',
         patrolRange: 50,
         speed: 50,
         pauseMs: 1500,
         recruitable: true,
+        // Medic's 104-canvas sprite puts the head slightly below the
+        // default 0.25-displayHeight inference — nudge the prompt down
+        // so it sits right above the medic's hat.
+        promptYAdjust: 12,
         greetingLines: [
           "Patch kit's topped off. You need a medic, I'm your medic.",
           "Someone's gotta stitch you up when the drones start thinking. Might as well be me.",
@@ -908,7 +1193,7 @@ export class LobbyScene extends Phaser.Scene {
         ],
         alreadyRecruitedLines: [
           "Ready when you are. Let's not keep the relay waiting.",
-          "Bags are packed, splints in the outer pocket. Whenever you call it.",
+          'Bags are packed, splints in the outer pocket. Whenever you call it.',
           "Been doing mobility drills for a week. My knee won't quit on us this time.",
         ],
       });
@@ -926,8 +1211,9 @@ export class LobbyScene extends Phaser.Scene {
         x: 200,
         y: 560,
         initialFacing: 'west',
-        // Force render above the workbench prop (feet_y=660 → depth 660).
-        depthOverride: 661,
+        // Workbench depth is now set to its TOP edge (see spawnWorkbench)
+        // so natural y-sort handles both the scavenger AND the player
+        // rendering in front of the bench. No depthOverride needed.
         recruitable: true,
         idleAnim: {
           textureKeyPrefix: 'scavenger-workbench-west',
@@ -935,19 +1221,131 @@ export class LobbyScene extends Phaser.Scene {
           frameRate: 6,
         },
         greetingLines: [
-          "Pulled this board out of a dead car uplink yesterday. Still warm.",
-          "Stripped a tow rig last week. Still smelled like its driver.",
-          "If it ran on pre-fall current, I can hotwire it. Usually.",
+          'Pulled this board out of a dead car uplink yesterday. Still warm.',
+          'Stripped a tow rig last week. Still smelled like its driver.',
+          'If it ran on pre-fall current, I can hotwire it. Usually.',
           "You want me on this run, say so. Otherwise I've got work.",
         ],
         alreadyRecruitedLines: [
-          "Almost done here. Give me one more pass.",
+          'Almost done here. Give me one more pass.',
           "Kit's sorted. Lock picks, cutter, two spare cells. Ready.",
           "Just taping this together. I'll sling it and follow.",
         ],
       });
       this.npcs.push(scavenger);
       this.obstacles.push(scavenger.collisionRect);
+    }
+
+    // Netrunner — stationary at his desk on the left wall, above the
+    // scavenger. 9-frame typing animation has the chair, desk, and
+    // laptop baked into every frame — no separate prop needed.
+    if (!playerIs('netrunner')) {
+      const netrunner = new NpcAgent(this, {
+        classId: 'netrunner',
+        x: 180,
+        y: 430,
+        initialFacing: 'west',
+        recruitable: true,
+        idleAnim: {
+          textureKeyPrefix: 'netrunner-typing-west',
+          frameCount: 9,
+          frameRate: 6,
+        },
+        greetingLines: [
+          'Protocol on this channel is older than me. Still listening though.',
+          "I've mapped three Censor sweep loops out of this terminal. Feels good to have a target.",
+          "Uplink's warm. Say the word and I'm walking it with you.",
+          'They jailbroke my handset when I was nine. I owe the scene a walk like this.',
+        ],
+        alreadyRecruitedLines: [
+          "Rig's packed. I'll close the session the moment we move.",
+          'Just pushing the last sniffer to the archive. Ready.',
+        ],
+      });
+      this.npcs.push(netrunner);
+      this.obstacles.push(netrunner.collisionRect);
+    }
+
+    // Cybermonk — stationary cross-legged meditation in the top-center
+    // of the room, facing south so the breathing loop reads to the
+    // player as they approach from the doorway.
+    if (!playerIs('cybermonk')) {
+      this.registerWalkAnims('cybermonk');
+      const cybermonk = new NpcAgent(this, {
+        classId: 'cybermonk',
+        x: 640,
+        y: 270,
+        initialFacing: 'south',
+        recruitable: true,
+        // The cushion prop + monk's own collision rect push the player
+        // further from his sprite center than the default 90 allows —
+        // bump so the prompt activates when the player stops south of
+        // the cushion.
+        interactionRadius: 140,
+        idleAnim: {
+          textureKeyPrefix: 'cybermonk-meditate-south',
+          frameCount: 8,
+          frameRate: 6,
+        },
+        greetingLines: [
+          "The Relay sings on its own frequency. I'm listening for the rhythm.",
+          "Breath in, breath out. When you need me, I'll be ready.",
+          "Hands are warm from the drum. They'll still be warm when we move.",
+          'Eight minutes between Censor sweeps, in this cell. Useful to know.',
+        ],
+        alreadyRecruitedLines: [
+          "Still here. Still centered. Walk when you're ready.",
+          "The flurry comes easier when I'm rested. Almost there.",
+        ],
+      });
+      this.npcs.push(cybermonk);
+      this.obstacles.push(cybermonk.collisionRect);
+    }
+
+    // Vanguard — stationary punching-bag drill in the right-center
+    // "training" area between the planter and the medic's patrol lane.
+    // 9-frame west-facing loop; the bag is baked into the sprite so no
+    // separate prop is needed. Scale 1.6 matches the player's Vanguard
+    // size (LOBBY_SCALE.vanguard) so the NPC and playable look alike.
+    if (!playerIs('vanguard')) {
+      this.registerWalkAnims('vanguard');
+      const vanguardNpc = new NpcAgent(this, {
+        classId: 'vanguard',
+        x: 410,
+        y: 590,
+        initialFacing: 'west',
+        recruitable: true,
+        spriteScale: 1.6,
+        // Vanguard's 136-canvas sprites have extra transparent space
+        // above the character, so the default "0.25 × displayHeight
+        // above center = head" assumption overshoots. Nudge the prompt
+        // down to sit just above the helmet.
+        promptYAdjust: 18,
+        idleAnim: {
+          textureKeyPrefix: 'vanguard-punchingbag-west',
+          frameCount: 9,
+          frameRate: 10,
+        },
+        greetingLines: [
+          "Bag's been catching hits since the filter run last week. Keeps me sharp.",
+          'When a shove comes for Dr. Vey on the road, I want it landing on me, not them.',
+          "Say go. I've been itching to do this on something that hits back.",
+          'Three rounds in, three to go. You can pull me off the bag whenever.',
+        ],
+        alreadyRecruitedLines: [
+          "Last reps. I'll be at the terminal when you are.",
+          "Warmed up. Shield's on a hook by the door.",
+        ],
+      });
+      this.npcs.push(vanguardNpc);
+      this.obstacles.push(vanguardNpc.collisionRect);
+    }
+
+    // Click-to-interact for every NPC. Gated by prompt visibility so only
+    // the closest in-range NPC responds — matches the E/Enter/Space flow
+    // and keeps the hover cursor affordance in sync with the floating "▼ E".
+    for (const npc of this.npcs) {
+      npc.enableClickInteract(() => npc.isPromptVisible());
     }
   }
 
@@ -962,8 +1360,28 @@ export class LobbyScene extends Phaser.Scene {
    * closest feet distance wins the "active interaction" on E press.
    */
   private updateNpcPrompts(playerFeetX: number, playerFeetY: number): void {
+    // When multiple NPCs are in range (e.g. Netrunner + Scavenger patrol
+    // zones overlap), show the prompt for the closest one only. Mirrors
+    // `tryInteract`'s "closest wins" rule so the visible prompt matches
+    // which NPC E/Enter/Space would actually activate.
+    let closest: NpcAgent | null = null;
+    let closestDist2 = Infinity;
     for (const npc of this.npcs) {
-      npc.setPromptVisible(npc.isInInteractionRange(playerFeetX, playerFeetY));
+      if (!npc.isInInteractionRange(playerFeetX, playerFeetY)) {
+        npc.setPromptVisible(false);
+        continue;
+      }
+      const rect = npc.collisionRect;
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      const d2 = (playerFeetX - cx) ** 2 + (playerFeetY - cy) ** 2;
+      if (d2 < closestDist2) {
+        closestDist2 = d2;
+        closest = npc;
+      }
+    }
+    for (const npc of this.npcs) {
+      npc.setPromptVisible(npc === closest);
     }
   }
 
@@ -973,9 +1391,7 @@ export class LobbyScene extends Phaser.Scene {
    */
   private exitPortalUrl(): string {
     const ourRef =
-      typeof window !== 'undefined'
-        ? window.location.origin + window.location.pathname
-        : '';
+      typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '';
     const def = CLASSES[this.leaderKey];
     return buildPortalExitUrl({
       ourRef,
@@ -1084,5 +1500,4 @@ export class LobbyScene extends Phaser.Scene {
       .setDisplaySize(WORLD_WIDTH, WORLD_HEIGHT)
       .setDepth(-100);
   }
-
 }

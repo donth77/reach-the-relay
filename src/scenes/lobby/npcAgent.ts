@@ -1,10 +1,11 @@
 import * as Phaser from 'phaser';
-import { FONT } from '../../util/ui';
+import { FONT, interactPromptText, isTouchDevice, keyHintLabel } from '../../util/ui';
 import { playSfx } from '../../util/audio';
 import { getLobbyState, toggleRecruit } from '../../state/lobby';
 import { CLASSES } from '../../data/classes';
-import { getHeadCrop } from '../../util/headCrop';
+import { getHeadCrop, getPortraitInfo } from '../../util/headCrop';
 import { CLASS_LORE_BLURBS } from '../../data/classBlurbs';
+import { openBriefing } from '../../util/briefingModal';
 
 /**
  * Single-source-of-truth for Greenhouse NPCs. Each NpcAgent handles:
@@ -74,13 +75,27 @@ export interface NpcAgentConfig {
   /** Override the lore blurb shown below the stat line. Use for NPCs
    *  outside CLASSES. Defaults to CLASS_LORE_BLURBS[classId] when unset. */
   customLore?: string;
+  /** Role subtitle under the personal name banner (e.g. "ESCORT" for
+   *  Dr. Vey). For CLASSES-backed NPCs the subtitle auto-populates
+   *  from CLASSES[classId].name; set this to show one for NPCs that
+   *  aren't in CLASSES. */
+  customRoleSubtitle?: string;
+  /** Fine-tune the "▼ E" prompt's vertical offset. Added to the
+   *  default position (which sits 28 px above the inferred head —
+   *  sprite.y - 0.25 × displayHeight). Positive pushes the prompt
+   *  DOWN (closer to head), negative pushes UP. Use when a sprite's
+   *  character-fill ratio differs from the 0.25 head-offset assumption
+   *  (e.g. Vanguard's 136-canvas sprites have more transparent space
+   *  above the character, so the default prompt sits too high). */
+  promptYAdjust?: number;
+  /** Override the default 90-px interaction radius. Use a larger value
+   *  when the NPC has prop-shaped collision around them (e.g. the
+   *  Cybermonk seated on a cushion) that pushes the player further
+   *  from the NPC's sprite center than the default reach allows. */
+  interactionRadius?: number;
 }
 
-type PatrolState =
-  | 'walking-forward'
-  | 'paused-forward'
-  | 'walking-back'
-  | 'paused-back';
+type PatrolState = 'walking-forward' | 'paused-forward' | 'walking-back' | 'paused-back';
 
 export class NpcAgent {
   readonly classId: string;
@@ -92,15 +107,19 @@ export class NpcAgent {
   private prompt: Phaser.GameObjects.Text;
   private _collisionRect: Phaser.Geom.Rectangle;
   private cfg: Required<
-    Pick<
-      NpcAgentConfig,
-      'patrolAxis' | 'patrolRange' | 'speed' | 'pauseMs' | 'initialFacing'
-    >
+    Pick<NpcAgentConfig, 'patrolAxis' | 'patrolRange' | 'speed' | 'pauseMs' | 'initialFacing'>
   > &
     NpcAgentConfig;
   private state: PatrolState;
   private stateUntil = 0;
   private patrolPausedExternally = false;
+  // Tracks whether the mouse cursor is currently over the NPC's sprite.
+  // Used by update() to reconcile the pointer cursor when canInteract()
+  // flips to true while the cursor is already parked on the sprite —
+  // since pointerover only fires on entry, a static cursor wouldn't
+  // otherwise get the hand-cursor treatment when the player walks in.
+  private pointerOverSprite = false;
+  private canInteractFn: (() => boolean) | null = null;
 
   constructor(scene: Phaser.Scene, config: NpcAgentConfig) {
     this.scene = scene;
@@ -110,7 +129,9 @@ export class NpcAgent {
     // their role (e.g. "MEDIC") — role is shown separately as a
     // subtitle in the dialogue modal.
     this.displayName = (
-      config.displayName ?? CLASSES[config.classId]?.personName ?? config.classId
+      config.displayName ??
+      CLASSES[config.classId]?.personName ??
+      config.classId
     ).toUpperCase();
 
     this.cfg = {
@@ -139,7 +160,7 @@ export class NpcAgent {
     const base = { w: 42, h: 24 };
     this._collisionRect = new Phaser.Geom.Rectangle(
       config.x - base.w / 2,
-      config.y + (this.sprite.displayHeight / 2) - base.h,
+      config.y + this.sprite.displayHeight / 2 - base.h,
       base.w,
       base.h,
     );
@@ -150,7 +171,7 @@ export class NpcAgent {
     // is a time-based sine offset rather than a Phaser tween — a tween
     // on .y would fight the per-frame setPosition.
     this.prompt = scene.add
-      .text(config.x, config.y, '▼ E', {
+      .text(config.x, config.y, interactPromptText(), {
         fontFamily: FONT,
         fontSize: '16px',
         color: '#8aff8a',
@@ -192,6 +213,34 @@ export class NpcAgent {
     this.prompt.setVisible(visible);
   }
 
+  /** True when the "▼ E" prompt is currently shown for this NPC. */
+  isPromptVisible(): boolean {
+    return this.prompt.visible;
+  }
+
+  /**
+   * Enable click-to-interact on the NPC sprite as an alternative to the
+   * E/Enter/Space keys. `canInteract` gates both the hand-cursor hover
+   * and the click itself so the affordance matches the floating prompt's
+   * visibility — only the closest in-range NPC responds.
+   */
+  enableClickInteract(canInteract: () => boolean): void {
+    this.canInteractFn = canInteract;
+    this.sprite.setInteractive();
+    this.sprite.on('pointerover', () => {
+      this.pointerOverSprite = true;
+      if (canInteract()) this.scene.input.setDefaultCursor('pointer');
+    });
+    this.sprite.on('pointerout', () => {
+      this.pointerOverSprite = false;
+      this.scene.input.setDefaultCursor('');
+    });
+    this.sprite.on('pointerdown', () => {
+      if (!canInteract()) return;
+      this.interact();
+    });
+  }
+
   /**
    * Pause patrol externally (e.g. while a dialogue is open). Also
    * pauses/resumes the sprite's frame animation so the character stops
@@ -211,16 +260,27 @@ export class NpcAgent {
    * True when the player's feet are within an interaction radius of the
    * NPC's sprite center. Caller passes the player's feet position.
    */
-  isInInteractionRange(feetX: number, feetY: number, radius = 90): boolean {
+  isInInteractionRange(feetX: number, feetY: number, radius?: number): boolean {
+    const r = radius ?? this.cfg.interactionRadius ?? 90;
     const dx = feetX - this.sprite.x;
     const dy = feetY - this.sprite.y;
-    return dx * dx + dy * dy <= radius * radius;
+    return dx * dx + dy * dy <= r * r;
   }
 
   /** Per-frame tick. Runs patrol and updates depth + prompt position. */
   update(delta: number): void {
     if (!this.patrolPausedExternally && this.cfg.patrolAxis) {
       this.tickPatrol(delta);
+    }
+
+    // Reconcile the hand-cursor when interaction range flips while the
+    // mouse is parked on the sprite. pointerover only fires on entry, so
+    // a stationary cursor never gets the pointer style unless we poll.
+    if (this.pointerOverSprite && this.canInteractFn) {
+      const desired = this.canInteractFn() ? 'pointer' : '';
+      if (this.scene.input.manager.defaultCursor !== desired) {
+        this.scene.input.setDefaultCursor(desired);
+      }
     }
     // Y-sort against player + props.
     this.sprite.setDepth(
@@ -241,7 +301,8 @@ export class NpcAgent {
     // every class. Small time-based sine bob so it feels alive.
     const bob = Math.sin(this.scene.time.now / 160) * 2;
     const headY = this.sprite.y - this.sprite.displayHeight * 0.25;
-    this.prompt.setPosition(this.sprite.x, headY - 28 + bob);
+    const promptAdjust = this.cfg.promptYAdjust ?? 0;
+    this.prompt.setPosition(this.sprite.x, headY - 28 + bob + promptAdjust);
   }
 
   private tickPatrol(delta: number): void {
@@ -340,10 +401,18 @@ export class NpcAgent {
     const lobby = getLobbyState();
     const isRecruited = lobby.recruited.has(this.classId);
     const isLeader = lobby.leaderId === this.classId;
-    const portraitKey = `${this.classId}-south`;
-    const portraitClassId = this.classId;
+    // Prefer the no-shield "world" portrait variant for classes that
+    // have one (currently just Vanguard) — keeps combat gear like the
+    // raised shield from covering half the face in the dialogue modal.
+    const portraitInfo = getPortraitInfo(this.classId);
+    const portraitKey = portraitInfo.textureKey;
+    // Use the world-variant key as the crop-lookup class so the
+    // dialogue modal picks up the matching head-crop entry.
+    const portraitClassId =
+      portraitKey === `${this.classId}-world-south` ? `${this.classId}-world` : this.classId;
     const statLine = this.cfg.customStatLine;
     const loreLine = this.cfg.customLore;
+    const roleSubtitle = this.cfg.customRoleSubtitle;
 
     // Leaders can't be "recruited" — short-circuit to a different line.
     if (isLeader) {
@@ -353,6 +422,7 @@ export class NpcAgent {
         portraitClassId,
         statLine,
         loreLine,
+        roleSubtitle,
         text: 'You told me to lead. Just say the word and we move.',
         options: [{ label: '[E] CLOSE', key: 'E', action: () => closeDialogue() }],
       });
@@ -360,19 +430,37 @@ export class NpcAgent {
     }
 
     const lines = isRecruited
-      ? this.cfg.alreadyRecruitedLines ?? ['Ready when you are.']
-      : this.cfg.greetingLines ?? ["I'm in if you'll have me."];
+      ? (this.cfg.alreadyRecruitedLines ?? ['Ready when you are.'])
+      : (this.cfg.greetingLines ?? ["I'm in if you'll have me."]);
     const text = lines[Math.floor(Math.random() * lines.length)];
 
     if (!this.recruitable) {
-      openDialogue(this.scene, {
+      // Non-recruitable NPCs (currently: Dr. Vey) get a CLOSE row and
+      // a BRIEFING shortcut. BRIEFING closes this dialogue and opens
+      // the shared mission-briefing modal so the player can re-read
+      // the objective any time from the escort themself.
+      const scene = this.scene;
+      openDialogue(scene, {
         name: this.displayName,
         portraitKey,
         portraitClassId,
         statLine,
         loreLine,
+        roleSubtitle,
         text,
-        options: [{ label: '[E] CLOSE', key: 'E', action: () => closeDialogue() }],
+        options: [
+          { label: '[E] CLOSE', key: 'E', action: () => closeDialogue() },
+          {
+            label: '[B] BRIEFING',
+            key: 'B',
+            action: () => {
+              closeDialogue();
+              // Next-tick so the keypress that opened the briefing
+              // doesn't also hit its own dismiss listener immediately.
+              scene.time.delayedCall(1, () => openBriefing(scene));
+            },
+          },
+        ],
       });
       return;
     }
@@ -455,6 +543,8 @@ interface DialogueConfig {
   statLine?: string;
   /** Override the lore blurb below the stat line. */
   loreLine?: string;
+  /** Override the role subtitle shown under the name banner. */
+  roleSubtitle?: string;
 }
 
 interface ActiveDialogue {
@@ -484,8 +574,12 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   // Centered panel. Size tuned for a portrait + multi-line text + a row
   // of options. Portrait sits in the top-left of the panel; name banner
   // to the right of it; body text below; options along the bottom.
-  const panelW = 680;
-  const panelH = 320;
+  // Touch devices get a scaled-up variant: the canvas is fit-to-screen
+  // on phones so the native panel reads tiny — bumping the panel +
+  // fonts keeps the modal legible at phone sizes.
+  const touchUi = isTouchDevice();
+  const panelW = touchUi ? 960 : 680;
+  const panelH = touchUi ? 500 : 320;
   const panelX = width / 2;
   const panelY = height / 2;
   const panelLeft = panelX - panelW / 2;
@@ -494,11 +588,19 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   const container = scene.add.container(0, 0).setDepth(100001).setScrollFactor(0);
 
   // Full-screen dim that ALSO catches click-outside-to-close.
+  // Defer the listener binding one tick: the click that OPENS this
+  // dialogue (e.g. pointerdown on an NPC sprite) is often still mid-flight
+  // — if the user's mouse ends up over the dim on release, the pointerup
+  // would immediately close the modal we just opened. Also using
+  // pointerdown (not pointerup) so the dim only closes on a *new* click
+  // after it's fully live.
   const dim = scene.add
     .rectangle(width / 2, height / 2, width, height, 0x000000, 0.55)
     .setScrollFactor(0)
     .setInteractive();
-  dim.on('pointerup', () => closeDialogue());
+  scene.time.delayedCall(1, () => {
+    if (active) dim.on('pointerdown', () => closeDialogue());
+  });
   container.add(dim);
 
   // Terminal-styled panel (dark green-black, cyan bezel). Interactive
@@ -519,19 +621,31 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   const t = panelTop;
   const b = panelTop + panelH;
   brackets.beginPath();
-  brackets.moveTo(l, t + armLen); brackets.lineTo(l, t); brackets.lineTo(l + armLen, t); brackets.strokePath();
+  brackets.moveTo(l, t + armLen);
+  brackets.lineTo(l, t);
+  brackets.lineTo(l + armLen, t);
+  brackets.strokePath();
   brackets.beginPath();
-  brackets.moveTo(r - armLen, t); brackets.lineTo(r, t); brackets.lineTo(r, t + armLen); brackets.strokePath();
+  brackets.moveTo(r - armLen, t);
+  brackets.lineTo(r, t);
+  brackets.lineTo(r, t + armLen);
+  brackets.strokePath();
   brackets.beginPath();
-  brackets.moveTo(l, b - armLen); brackets.lineTo(l, b); brackets.lineTo(l + armLen, b); brackets.strokePath();
+  brackets.moveTo(l, b - armLen);
+  brackets.lineTo(l, b);
+  brackets.lineTo(l + armLen, b);
+  brackets.strokePath();
   brackets.beginPath();
-  brackets.moveTo(r - armLen, b); brackets.lineTo(r, b); brackets.lineTo(r, b - armLen); brackets.strokePath();
+  brackets.moveTo(r - armLen, b);
+  brackets.lineTo(r, b);
+  brackets.lineTo(r, b - armLen);
+  brackets.strokePath();
   container.add(brackets);
 
   // Portrait slot (if provided). Framed box in the top-left of the
   // panel — shows ONLY the character's face, cropped from the
   // south-facing sprite using the shared headCrop rectangles.
-  const PORTRAIT_BOX = 128;
+  const PORTRAIT_BOX = touchUi ? 192 : 128;
   const portraitX = panelLeft + 24 + PORTRAIT_BOX / 2;
   const portraitY = panelTop + 24 + PORTRAIT_BOX / 2;
   if (config.portraitKey) {
@@ -546,9 +660,12 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
         : { x: 14, y: 4, w: 40, h: 28, canvas: 68 };
       // Fit the cropped region into the square slot, constrained by
       // the crop's larger dimension so the face stays proportional.
-      // Small stroke inset (1px each side) so the face doesn't overlap
-      // the frame's outline.
-      const fitScale = (PORTRAIT_BOX - 2) / Math.max(crop.w, crop.h);
+      // The default 1.2 multiplier zooms the head a bit so the portrait
+      // reads as a face rather than a distant doll — per-class overrides
+      // on HeadCrop.fitMultiplier disable that zoom for crops whose
+      // proportions would overflow the 128×128 slot (e.g. Vanguard).
+      const fitMult = crop.fitMultiplier ?? 1.2;
+      const fitScale = ((PORTRAIT_BOX - 2) / Math.max(crop.w, crop.h)) * fitMult;
       // Origin is the BOTTOM-CENTER of the crop rect in normalized
       // canvas coords — setting the image's position at the frame's
       // bottom (accounting for the 2px stroke) anchors the face flush
@@ -573,20 +690,23 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   const nameBanner = scene.add
     .text(nameX, nameY, `> ${config.name}`, {
       fontFamily: FONT,
-      fontSize: '24px',
+      fontSize: touchUi ? '36px' : '24px',
       color: '#8aff8a',
     })
     .setOrigin(0, 0)
     .setScrollFactor(0);
   container.add(nameBanner);
-  const roleSubtitle = config.portraitClassId
-    ? CLASSES[config.portraitClassId]?.name.toUpperCase() ?? ''
-    : '';
+  // Strip a trailing `-world` suffix for CLASSES / lore lookups —
+  // `vanguard-world` is a portrait-only alias that points at the same
+  // class data as `vanguard`.
+  const dataClassId = config.portraitClassId?.replace(/-world$/, '');
+  const roleSubtitle =
+    config.roleSubtitle ?? (dataClassId ? (CLASSES[dataClassId]?.name.toUpperCase() ?? '') : '');
   if (roleSubtitle) {
     const roleText = scene.add
-      .text(nameX, nameY + 30, roleSubtitle, {
+      .text(nameX, nameY + (touchUi ? 44 : 30), roleSubtitle, {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: touchUi ? '20px' : '14px',
         color: '#6aaa8a',
       })
       .setOrigin(0, 0)
@@ -595,12 +715,12 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   }
 
   // Body text below the name+role, wrapped to the remaining width.
-  const bodyY = nameY + (roleSubtitle ? 54 : 36);
+  const bodyY = nameY + (roleSubtitle ? (touchUi ? 80 : 54) : touchUi ? 54 : 36);
   const bodyWidth = panelW - (nameX - panelLeft) - 30;
   const body_ = scene.add
     .text(nameX, bodyY, config.text, {
       fontFamily: FONT,
-      fontSize: '18px',
+      fontSize: touchUi ? '26px' : '18px',
       color: '#a6ffc6',
       wordWrap: { width: bodyWidth },
     })
@@ -614,9 +734,9 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   let lastBottom = body_.y + body_.displayHeight;
   const resolvedStatLine =
     config.statLine ??
-    (config.portraitClassId && CLASSES[config.portraitClassId]
+    (dataClassId && CLASSES[dataClassId]
       ? (() => {
-          const def = CLASSES[config.portraitClassId];
+          const def = CLASSES[dataClassId!];
           return `HP ${def.hp}   ATK ${def.attack}   DEF ${def.defense}   SPD ${def.speed}${def.mp > 0 ? `   MP ${def.mp}` : ''}`;
         })()
       : null);
@@ -624,7 +744,7 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
     const stats = scene.add
       .text(nameX, lastBottom + 14, resolvedStatLine, {
         fontFamily: FONT,
-        fontSize: '16px',
+        fontSize: touchUi ? '24px' : '18px',
         color: '#6aaa8a',
       })
       .setOrigin(0, 0)
@@ -637,13 +757,12 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   // back to CLASS_LORE_BLURBS[classId]. Dim-colored so it reads as
   // supplementary to the NPC's in-the-moment greeting above.
   const resolvedLore =
-    config.loreLine ??
-    (config.portraitClassId ? CLASS_LORE_BLURBS[config.portraitClassId] : undefined);
+    config.loreLine ?? (dataClassId ? CLASS_LORE_BLURBS[dataClassId] : undefined);
   if (resolvedLore) {
     const lore = scene.add
       .text(nameX, lastBottom + 12, resolvedLore, {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: touchUi ? '22px' : '16px',
         color: '#4a8a6a',
         fontStyle: 'italic',
         wordWrap: { width: bodyWidth },
@@ -657,7 +776,7 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   const closeBtn = scene.add
     .text(panelLeft + panelW - 20, panelTop + 14, '✕', {
       fontFamily: FONT,
-      fontSize: '22px',
+      fontSize: touchUi ? '32px' : '22px',
       color: '#8aff8a',
     })
     .setOrigin(1, 0)
@@ -668,16 +787,23 @@ export function openDialogue(scene: Phaser.Scene, config: DialogueConfig): void 
   closeBtn.on('pointerup', () => closeDialogue());
   container.add(closeBtn);
 
-  // Option labels along the bottom of the panel.
-  const optSpacing = Math.min(260, (panelW - 60) / Math.max(1, config.options.length));
-  const optsY = panelTop + panelH - 34;
+  // Option labels along the bottom of the panel. Keyboard `[X]` hints
+  // are stripped on touch since mobile players can't press them — the
+  // labels themselves are tappable.
+  const optSpacing = Math.min(
+    touchUi ? 360 : 260,
+    (panelW - 60) / Math.max(1, config.options.length),
+  );
+  const optsY = panelTop + panelH - (touchUi ? 50 : 34);
   config.options.forEach((opt, i) => {
     const x = panelX - ((config.options.length - 1) * optSpacing) / 2 + i * optSpacing;
     const txt = scene.add
-      .text(x, optsY, opt.label, {
+      .text(x, optsY, keyHintLabel(opt.label), {
         fontFamily: FONT,
-        fontSize: '18px',
+        fontSize: touchUi ? '26px' : '18px',
         color: '#8affaa',
+        backgroundColor: touchUi ? '#0a2a1a' : undefined,
+        padding: touchUi ? { x: 16, y: 10 } : undefined,
       })
       .setOrigin(0.5)
       .setScrollFactor(0)

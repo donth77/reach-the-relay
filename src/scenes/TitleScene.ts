@@ -2,8 +2,10 @@ import * as Phaser from 'phaser';
 import { FONT } from '../util/ui';
 import { playMusicPool } from '../util/music';
 import { playSfx, stopAllMusic } from '../util/audio';
-import { mountMusicToggle, unmountMusicToggle } from '../util/musicToggle';
-import { log } from '../util/logger';
+import { mountMusicToggle, unmountMusicToggle, isTitleMusicMuted } from '../util/musicToggle';
+import { openBriefing } from '../util/briefingModal';
+import { log, isDebugEnabled } from '../util/logger';
+import { RelayCutsceneScene } from './RelayCutsceneScene';
 
 // Radio-tower beacon blink timing. Tower light is ON most of the time with
 // a brief OFF flash, like a real aviation warning beacon.
@@ -14,7 +16,7 @@ const BLINK_OFF_MS = 220;
 const LOGO_TARGET_WIDTH = 800;
 
 // Menu layout constants.
-const MENU_ITEMS = ['Start Game', 'Settings'] as const;
+const MENU_ITEMS = ['Start Game', 'How to Play'] as const;
 type MenuItemId = (typeof MENU_ITEMS)[number];
 // Layout: Settings stays at its current y (~636); Start Game sits higher so
 // the two rows feel like deliberate SNES-menu options, not packed.
@@ -56,14 +58,20 @@ export class TitleScene extends Phaser.Scene {
 
     // Autoplay policy: if the audio context hasn't been unlocked yet, Phaser
     // queues the play. Re-issue on UNLOCKED to be safe.
+    // Also respect the title-scoped mute preference — `isTitleMusicMuted()`
+    // returns true if the player previously toggled the button off; skipping
+    // playMusicPool here avoids a brief "music starts → immediately stops"
+    // artifact on scene re-entry.
     const hasMainTheme = this.cache.audio.has('music-main-theme');
     log('TITLE', 'audio state', { locked: this.sound.locked, hasMainTheme });
-    playMusicPool(this, ['music-main-theme'], 0.35);
-    if (this.sound.locked) {
-      this.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
-        log('TITLE', 'sound unlocked — retrying main-theme');
-        playMusicPool(this, ['music-main-theme'], 0.35);
-      });
+    if (!isTitleMusicMuted()) {
+      playMusicPool(this, ['music-main-theme'], 0.35);
+      if (this.sound.locked) {
+        this.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
+          log('TITLE', 'sound unlocked — retrying main-theme');
+          if (!isTitleMusicMuted()) playMusicPool(this, ['music-main-theme'], 0.35);
+        });
+      }
     }
 
     // Backgrounds + beacon blink — render immediately so the user sees the
@@ -91,6 +99,17 @@ export class TitleScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ENTER', () => this.activateSelected());
     this.input.keyboard?.on('keydown-SPACE', () => this.activateSelected());
     this.input.keyboard?.on('keydown-E', () => this.activateSelected());
+
+    // DEV: `V` from the title screen jumps straight into the victory cutscene
+    // with a test party, bypassing LeaderSelect → Lobby → Route → encounters.
+    // ONLY wired up when the debug logger is enabled (same gate as the DEBUG
+    // badge). In production builds this is a no-op.
+    if (isDebugEnabled()) {
+      this.input.keyboard?.on('keydown-V', () => {
+        log('SCENE', 'Test-trigger: RelayCutscene');
+        RelayCutsceneScene.startTest(this);
+      });
+    }
 
     // Defer menu text creation until Silkscreen is loaded. The bg + logo are
     // visible immediately (no black screen), and the menu text pops in once
@@ -125,7 +144,7 @@ export class TitleScene extends Phaser.Scene {
 
   private buildMenuRows(): void {
     const { width, height } = this.scale;
-    const menuStartY = height * MENU_START_Y_FRACTION;
+    const menuStartY = height * MENU_START_Y_FRACTION - 25;
     MENU_ITEMS.forEach((id, i) => {
       const y = menuStartY + i * MENU_ROW_HEIGHT;
       const text = this.add
@@ -194,7 +213,10 @@ export class TitleScene extends Phaser.Scene {
     playSfx(this, 'sfx-menu-confirm', 0.5);
     if (row.id === 'Start Game') {
       this.scene.start('LeaderSelect');
+    } else if (row.id === 'How to Play') {
+      // Defer a tick — the briefing modal binds scene.input.on('pointerdown', close)
+      // on open, and without the delay the same click that opened it also closes it.
+      this.time.delayedCall(1, () => openBriefing(this));
     }
-    // 'Settings' is a no-op for now.
   }
 }

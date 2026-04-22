@@ -35,7 +35,7 @@ export interface ClassDef {
   id: string;
   /** Role name (e.g. "Vanguard"). Shown as a subtitle below the personal name. */
   name: string;
-  /** Personal name of the individual filling this role (e.g. "Kade").
+  /** Personal name of the individual filling this role (e.g. "Kael").
    *  Displayed as the primary identifier in the lobby, party select, and
    *  dialogue UIs; `name` is treated as their secondary/role label. */
   personName: string;
@@ -63,7 +63,7 @@ export const CLASSES: Record<string, ClassDef> = {
   vanguard: {
     id: 'vanguard',
     name: 'Vanguard',
-    personName: 'Kade',
+    personName: 'Kael',
     spriteKey: 'vanguard-west',
     // 96×96 canvas — use default party scale (2.5) to match other classes'
     // display height (~120px), since the vanguard character fills less of
@@ -153,7 +153,8 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'frostlock',
         label: 'FROSTLOCK',
-        description: "Coolant freeze. Damages and halves target's gauge fill rate for 2 turns. ❄\uFE0F",
+        description:
+          "Coolant freeze. Damages and halves target's gauge fill rate for 2 turns. ❄\uFE0F",
         mpCost: 5,
         target: 'enemy',
         effect: 'slow',
@@ -311,8 +312,7 @@ export const CLASSES: Record<string, ClassDef> = {
     // downed-pose footprint in line with the rest of the party.
     scale: 2.4,
     downedYOffset: 17,
-    // hp: 65,
-    hp: 1,
+    hp: 65,
     attack: 13,
     defense: 6,
     speed: 5,
@@ -331,12 +331,13 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'focus',
         label: 'FOCUS',
-        description: 'Meditate to restore 18 HP to yourself. No MP cost.',
+        description: 'Meditate to restore 18 HP to yourself. No MP cost. 3 uses per rest.',
         mpCost: 0,
         target: 'self',
         effect: 'heal',
         power: 18,
         sfxKey: 'sfx-cybermonk-focus',
+        maxUsesPerRest: 3,
       },
       {
         id: 'flurry',

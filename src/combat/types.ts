@@ -55,6 +55,12 @@ export interface Unit {
   // Instance id of the last party member that dealt damage to this enemy —
   // used by Wreckwarden's Shockwave targeting. Reset per combat.
   lastDamagerId?: string;
+  // Locked-on target for enemies with "focus" behavior (currently Sentry:
+  // 30% chance to fixate on a random unit at combat start and attack it
+  // every turn until the target dies). null when not focused; reset per
+  // combat. Using an instance id rather than a Unit ref so it survives
+  // unit list rebuilds cleanly.
+  focusTargetId?: string | null;
   posX: number;
   posY: number;
   // Display-px distance from posY (sprite origin) down to the character's feet.

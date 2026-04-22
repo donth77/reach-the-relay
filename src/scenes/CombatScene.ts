@@ -119,24 +119,19 @@ export class CombatScene extends Phaser.Scene {
     this.drawBottomPanel();
 
     this.add
-      .text(
-        width / 2,
-        30,
-        `${run.route.name}  —  Encounter ${run.encounterIndex + 1}`,
-        {
-          fontFamily: FONT,
-          fontSize: '20px',
-          color: '#ffffff',
-          stroke: '#000000',
-          strokeThickness: 4,
-        },
-      )
+      .text(width / 2, 30, `${run.route.name}  —  Encounter ${run.encounterIndex + 1}`, {
+        fontFamily: FONT,
+        fontSize: '24px',
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 4,
+      })
       .setOrigin(0.5);
 
     this.messageText = this.add
-      .text(width / 2, 58, '', {
+      .text(width / 2, 76, '', {
         fontFamily: FONT,
-        fontSize: '20px',
+        fontSize: '23px',
         color: '#ffff88',
         stroke: '#000000',
         strokeThickness: 4,
@@ -205,10 +200,7 @@ export class CombatScene extends Phaser.Scene {
       const walkKey = `${key}-walk-west`;
       if (!this.anims.exists(walkKey)) {
         const walkCount =
-          key === 'cybermonk' ||
-          key === 'scavenger' ||
-          key === 'vanguard' ||
-          key === 'medic'
+          key === 'cybermonk' || key === 'scavenger' || key === 'vanguard' || key === 'medic'
             ? 6
             : 4;
         const frames = Array.from({ length: walkCount }, (_, i) => ({
@@ -241,7 +233,7 @@ export class CombatScene extends Phaser.Scene {
       this.anims.create({ key: 'medic-cast-west', frames, frameRate: 9, repeat: 0 });
     }
 
-    // Dr. Vey escort death animation (she faces west like party)
+    // Dr. Vey escort death animation (faces west like party)
     if (!this.anims.exists('drvey-death-west')) {
       const frames = Array.from({ length: 7 }, (_, i) => ({
         key: `drvey-death-west-${i.toString().padStart(3, '0')}`,
@@ -292,7 +284,12 @@ export class CombatScene extends Phaser.Scene {
       const frames = Array.from({ length: 9 }, (_, i) => ({
         key: `wreckwarden-attack-coolant-east-${i.toString().padStart(3, '0')}`,
       }));
-      this.anims.create({ key: 'wreckwarden-attack-coolant-east', frames, frameRate: 8, repeat: 0 });
+      this.anims.create({
+        key: 'wreckwarden-attack-coolant-east',
+        frames,
+        frameRate: 8,
+        repeat: 0,
+      });
     }
     if (!this.anims.exists('wreckwarden-attack-shockwave-east')) {
       const frames = Array.from({ length: 17 }, (_, i) => ({
@@ -501,7 +498,7 @@ export class CombatScene extends Phaser.Scene {
     });
 
     // Escort sits behind the vertical center of the party line (so enemies
-    // attacking her visually don't appear to be hitting a specific party member).
+    // attacking the escort visually don't appear to be hitting a specific party member).
     const escort = this.makeUnit({
       id: 'drvey',
       name: 'Dr. Vey',
@@ -735,8 +732,7 @@ export class CombatScene extends Phaser.Scene {
       'wirehead-south': { centerX: 46.5, centerY: 45.5, feetY: 80, headY: 11 },
       'wirehead-north': { centerX: 46, centerY: 45, feetY: 81, headY: 9 },
     };
-    const bbox =
-      SPRITE_BBOX[u.spriteKey] ?? BBOX[nativeCanvasSize] ?? BBOX[68];
+    const bbox = SPRITE_BBOX[u.spriteKey] ?? BBOX[nativeCanvasSize] ?? BBOX[68];
     const originX = bbox.centerX / nativeCanvasSize;
     const originY = bbox.centerY / nativeCanvasSize;
     // Distance (display px) from the origin point to the feet / head top.
@@ -1020,7 +1016,12 @@ export class CombatScene extends Phaser.Scene {
     const HP_BAR_WIDTH = 95;
     // HP bar now ends at 365 (270+95). Shift MP text + ATB bar right so the
     // "MP NN" text doesn't overlap the widened HP bar.
-    const COL_MP_TEXT_RIGHT = 440;
+    // MP text is LEFT-aligned at this x so the "MP" prefix forms a
+    // consistent column down the rows. Right-aligning caused the
+    // left edges to drift when a party member's MP changed digit-count
+    // (e.g. Medic going from "MP 28" → "MP 9"), breaking column feel
+    // against an adjacent member with double-digit MP.
+    const COL_MP_TEXT_LEFT = 385;
     const COL_ATB_BAR = 460;
     const ATB_BAR_WIDTH = 95;
 
@@ -1070,12 +1071,12 @@ export class CombatScene extends Phaser.Scene {
 
         if (u.maxMp > 0) {
           mpText = this.add
-            .text(COL_MP_TEXT_RIGHT, 0, `MP ${u.mp}`, {
+            .text(COL_MP_TEXT_LEFT, 0, `MP ${u.mp}`, {
               fontFamily: FONT,
               fontSize: '17px',
               color: '#88aaff',
             })
-            .setOrigin(1, 0.5);
+            .setOrigin(0, 0.5);
         }
       }
 
@@ -1767,6 +1768,14 @@ export class CombatScene extends Phaser.Scene {
     this.showCancelButton(() => this.handleEscapeKey());
 
     const color = item.target === 'ko-ally' ? 0xff8888 : 0xaaffaa;
+    const commitTarget = (t: Unit) => {
+      playSfx(this, 'sfx-menu-confirm', 0.5);
+      this.itemTargetSelectActive = false;
+      this.hideCancelButton();
+      this.hideTargetMenu();
+      this.clearTargetSelect();
+      this.executeItem(attacker, t, item);
+    };
     for (const t of targets) {
       if (!t.sprite) continue;
       // Boost alpha if KO'd so the red tint reads clearly
@@ -1776,14 +1785,13 @@ export class CombatScene extends Phaser.Scene {
       }
       t.sprite.setInteractive({ useHandCursor: true });
       t.sprite.setTint(color);
-      t.sprite.once('pointerup', () => {
-        playSfx(this, 'sfx-menu-confirm', 0.5);
-        this.itemTargetSelectActive = false;
-        this.hideCancelButton();
-        this.clearTargetSelect();
-        this.executeItem(attacker, t, item);
-      });
+      t.sprite.once('pointerup', () => commitTarget(t));
     }
+    // Keyboard + action-box target menu, same as the ability-target flow.
+    // Without this, items opened the target-select state but left the
+    // player with no keyboard way to commit and no on-screen affordance
+    // beyond the tinted sprites.
+    this.showTargetListMenu(targets, color, commitTarget);
   }
 
   private executeItem(attacker: Unit, target: Unit | null, item: ItemDef): void {
@@ -2425,15 +2433,37 @@ export class CombatScene extends Phaser.Scene {
       target = living[Math.floor(Math.random() * living.length)];
     }
 
-    const ignoreGuard = !!enemy.enemyDef?.ignoresGuard;
-    const guardian = this.units.find((u) => u.side === 'party' && u.guarding && !u.ko);
-    const redirected = !ignoreGuard && guardian && target !== guardian;
-
-    // Resolve the GUARD redirect UP FRONT so the walk destination and the
-    // path-dim logic use the actual final target. Previously the redirect
-    // happened at impact, so Wirehead would walk toward the escort (dimming
-    // party on the way) even when GUARD was about to intercept.
-    let guardHalved = false;
+    // Sentry "focus fire" behavior — 35% chance per combat to enter
+    // focus mode. Once in focus mode, it stays in focus mode for the
+    // whole combat: target is locked on one unit until that unit dies,
+    // then re-rolls a new focus target among the surviving units.
+    //   focusTargetId === undefined → first attack this combat, roll 35%.
+    //   focusTargetId === '__none__' → rolled into the 65% random branch
+    //                                  for the WHOLE combat.
+    //   focusTargetId === <id>       → currently locked on that unit.
+    if (enemy.id === 'sentry' && !wasTauntedThisTurn) {
+      const RANDOM_SENTINEL = '__none__';
+      if (enemy.focusTargetId === undefined) {
+        if (Math.random() < 0.35) {
+          const pick = living[Math.floor(Math.random() * living.length)];
+          enemy.focusTargetId = pick.id;
+          target = pick;
+        } else {
+          enemy.focusTargetId = RANDOM_SENTINEL;
+        }
+      } else if (enemy.focusTargetId !== RANDOM_SENTINEL) {
+        const focused = this.units.find((u) => u.id === enemy.focusTargetId && !u.ko);
+        if (focused) {
+          target = focused;
+        } else {
+          // Locked-on target is dead — re-roll a new focus target from
+          // the living pool and lock onto that for the rest of combat.
+          const pick = living[Math.floor(Math.random() * living.length)];
+          enemy.focusTargetId = pick.id;
+          target = pick;
+        }
+      }
+    }
 
     // Sentry: decide ranged vs melee BEFORE the message so the log matches.
     // 60% plasma bolt / 40% melee swing.
@@ -2446,6 +2476,23 @@ export class CombatScene extends Phaser.Scene {
         ? 'attacks'
         : (enemy.enemyDef?.attackName ?? 'attacks');
 
+    // Sentry now rolls a fresh random target each turn — the earlier
+    // "always aim at the center party member" rule made it feel like
+    // Sentry was locked onto one unit across consecutive attacks. The
+    // default random pick (line ~2437 above) handles this; TAUNT /
+    // target-escort / prefer-low-hp branches above still override when
+    // relevant.
+
+    const ignoreGuard = !!enemy.enemyDef?.ignoresGuard;
+    const guardian = this.units.find((u) => u.side === 'party' && u.guarding && !u.ko);
+    const redirected = !ignoreGuard && guardian && target !== guardian;
+
+    // Resolve the GUARD redirect UP FRONT so the walk destination and the
+    // path-dim logic use the actual final target. Previously the redirect
+    // happened at impact, so Wirehead would walk toward the escort (dimming
+    // party on the way) even when GUARD was about to intercept.
+    let guardHalved = false;
+
     if (redirected && guardian) {
       target = guardian;
       guardHalved = true;
@@ -2455,14 +2502,6 @@ export class CombatScene extends Phaser.Scene {
       this.showMessage(`${enemy.name} ${attackVerb} ${target.name}!`);
     } else {
       this.showMessage(`${enemy.name} ${attackVerb} ${target.name}!`);
-    }
-
-    // Ranged attackers (Sentry plasma bolt) always aim at the center of the
-    // party for composition — unless they were taunted this turn, in which
-    // case the taunter override remains.
-    if (enemy.id === 'sentry' && !wasTauntedThisTurn) {
-      const center = this.getCenterPartyMember();
-      if (center) target = center;
     }
 
     const facing = getUnitFacing(enemy);
@@ -2507,6 +2546,7 @@ export class CombatScene extends Phaser.Scene {
           6, // bolt fires on frame 6
           undefined, // boltColorOverride
           100, // muzzleXOffset — well forward, aligned with barrel tip
+          true, // fastBolt — plasma-bolt timing; Wreckwarden shockwave keeps the default heavy feel
         );
       } else {
         // Melee swing: walk to target, swing, walk back.
@@ -2594,9 +2634,7 @@ export class CombatScene extends Phaser.Scene {
    */
   private checkSmokeExpiry(): void {
     if (this.smokeClouds.length === 0) return;
-    const anyStillMissing = this.units.some(
-      (u) => u.side === 'enemy' && !u.ko && u.missing,
-    );
+    const anyStillMissing = this.units.some((u) => u.side === 'enemy' && !u.ko && u.missing);
     if (anyStillMissing) return;
     this.clearSmokeClouds();
   }
@@ -2647,6 +2685,10 @@ export class CombatScene extends Phaser.Scene {
     // Forward offset (toward the target) from sprite center. Use to align the
     // muzzle point with the actual barrel/chest in the attack sprite frame.
     muzzleXOffset: number = 0,
+    // When true, use the snappier "plasma bolt" travel timing (0.8× distance,
+    // 140-300 ms clamp). Default false keeps the slower, heavier feel for
+    // boss-tier attacks like Wreckwarden's shockwave.
+    fastBolt: boolean = false,
   ): void {
     if (!attacker.sprite || !target.sprite) {
       onImpact();
@@ -2727,7 +2769,14 @@ export class CombatScene extends Phaser.Scene {
             target.sprite.x,
             target.sprite.y,
           );
-          const travelDuration = Math.max(220, Math.min(480, distance * 1.3));
+          // Travel time: default "heavy" timing for boss-tier signature
+          // attacks (Wreckwarden shockwave) — slow, read as a weighty
+          // blast. Snappy timing for regular ranged attacks (sentry
+          // plasma bolt) opt-in via fastBolt.
+          const travelDuration = fastBolt
+            ? // ~25% faster than the default heavy-bolt timing.
+              Math.max(165, Math.min(360, distance * 0.975))
+            : Math.max(220, Math.min(480, distance * 1.3));
           const glow = this.add.circle(startX, startY, 14, color, 0.35).setDepth(99999);
           const core = this.add.circle(startX, startY, 6, color, 1).setDepth(99999);
           this.tweens.add({
@@ -3163,6 +3212,13 @@ export class CombatScene extends Phaser.Scene {
       this.checkEndConditions();
       return;
     }
+    // Shockwave intentionally ignores TAUNT — TAUNT + Vanguard's high
+    // defense would otherwise neutralize the scariest boss mechanic
+    // into a free turn. The AoE coolant slam already ignores taunt;
+    // keeping Shockwave on the same rule makes boss phases feel like
+    // fixed threats players plan around, not things TAUNT cancels.
+    // Vanguard's TAUNT still works on the boss's phase-0 normal attack
+    // (every third turn) — that's the designed counter window.
     const target = this.pickShockwaveTarget(enemy, party);
 
     const onImpact = () => {
@@ -3252,7 +3308,7 @@ export class CombatScene extends Phaser.Scene {
     const targetFeetY = target.posY + (target.feetOffsetY ?? 0);
     const forwardY = targetFeetY - (u.feetOffsetY ?? 0);
 
-    // (Enemies attacking the escort walk directly to her — no clamp. Party
+    // (Enemies attacking the escort walk directly to them — no clamp. Party
     // members in the visual path are dimmed during the walk, see below.)
 
     // FF6-style: party attacking an enemy stops at the enemy formation's front
@@ -3526,19 +3582,21 @@ export class CombatScene extends Phaser.Scene {
     this.showMessage('VICTORY');
 
     this.time.delayedCall(1200, () => {
-      const wasLastIndex = run.encounterIndex;
       const nextIndex = run.encounterIndex + 1;
       run.encounterIndex = nextIndex;
-      // Rest happens BEFORE Journey narratively ("rest at this spot, then
-      // travel to the next"). Journey is always the final transition into the
-      // next Combat or RunComplete.
-      if (run.route.restAfter.includes(wasLastIndex) && nextIndex < run.route.encounters.length) {
-        log('SCENE', 'Combat → Rest', { nextEncounter: nextIndex });
-        this.scene.start('Rest');
-      } else {
-        log('SCENE', 'Combat → Journey', { destination: nextIndex });
-        this.scene.start('Journey');
-      }
+      // Always route to Journey so the player sees the marker animate
+      // across the map. Journey itself detects whether the upcoming
+      // transition crosses a rest stop and, if so, pauses the marker at
+      // the rest icon before handing off to RestScene. This replaces
+      // the old Combat → Rest direct path so rests get proper travel
+      // framing on the map.
+      log('SCENE', 'Combat → Journey', { destination: nextIndex });
+      // Pass explicit false flags — Phaser preserves cached scene data
+      // across scene.start calls, so without this the fromRouteStart
+      // flag set on the route-map entry point leaks into post-combat
+      // Journey transitions, making the marker appear to start from
+      // the Greenhouse instead of the just-cleared encounter node.
+      this.scene.start('Journey', { fromRouteStart: false, fromRest: false });
     });
   }
 
@@ -3568,6 +3626,9 @@ export class CombatScene extends Phaser.Scene {
       const u = this.units.find((x) => x.id === this.activeUnitId);
       this.clearTargetSelect();
       this.hideCancelButton();
+      // Item target select now uses showTargetListMenu — tear down the
+      // keyboard bindings + DOM it created, matching the ability flow.
+      this.hideTargetMenu();
       this.itemTargetSelectActive = false;
       if (u) this.showItemMenu(u);
       return;

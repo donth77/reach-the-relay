@@ -1,9 +1,5 @@
 import * as Phaser from 'phaser';
-import {
-  isPortalEntry,
-  DEFAULT_PORTAL_LEADER,
-  DEFAULT_PORTAL_RECRUITS,
-} from '../util/portal';
+import { isPortalEntry, DEFAULT_PORTAL_LEADER, DEFAULT_PORTAL_RECRUITS } from '../util/portal';
 import { setLeader, addRecruit } from '../state/lobby';
 
 const PARTY_KEYS = ['vanguard', 'netrunner', 'medic', 'scavenger', 'cybermonk'] as const;
@@ -66,9 +62,7 @@ export class BootScene extends Phaser.Scene {
       // for the walkable LobbyScene. Other classes still use their original
       // single-direction combat walk until they're regenerated too.
       const walkFrames =
-        key === 'cybermonk' || key === 'scavenger' || key === 'medic' || key === 'vanguard'
-          ? 6
-          : 4;
+        key === 'cybermonk' || key === 'scavenger' || key === 'medic' || key === 'vanguard' ? 6 : 4;
       for (let i = 0; i < walkFrames; i++) {
         const padded = i.toString().padStart(3, '0');
         this.load.image(
@@ -98,10 +92,7 @@ export class BootScene extends Phaser.Scene {
       // around Greenhouse, while combat keeps the shield-bearing 96×96).
       if (key === 'vanguard') {
         for (const dir of ['south', 'north', 'east', 'west'] as const) {
-          this.load.image(
-            `${key}-world-${dir}`,
-            `assets/sprites/party/${key}/world/${dir}.png`,
-          );
+          this.load.image(`${key}-world-${dir}`, `assets/sprites/party/${key}/world/${dir}.png`);
         }
       }
       const classWalk = worldWalkFrames[key];
@@ -154,6 +145,50 @@ export class BootScene extends Phaser.Scene {
       );
     }
     this.load.image('drvey-downed', 'assets/sprites/npcs/drvey/downed.png');
+
+    // Dr. Vey worldwalk animations — 3 dirs (south / north / west), 6 frames each
+    // (PixelLab walking-6-frames template). East is derived by flipping west
+    // at render time (no dedicated east frames).
+    for (const dir of ['south', 'north', 'west'] as const) {
+      for (let i = 0; i < 6; i++) {
+        const padded = i.toString().padStart(3, '0');
+        this.load.image(
+          `drvey-worldwalk-${dir}-${padded}`,
+          `assets/sprites/npcs/drvey/anim/worldwalk-${dir}/frame_${padded}.png`,
+        );
+      }
+    }
+
+    // Dr. Vey activate-console animation — 9 north-facing frames (PixelLab
+    // custom "Lever Activate"). Back-to-camera arm raise, played in Beat 3
+    // to sync with the lever-up → lever-down bg swap.
+    for (let i = 0; i < 9; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `drvey-activate-north-${padded}`,
+        `assets/sprites/npcs/drvey/anim/activate-north/frame_${padded}.png`,
+      );
+    }
+
+    // Cutscene backgrounds (1280×720 webp, downscaled from SpriteCook 4K originals).
+    this.load.image(
+      'cutscene-relay-hilltop-wide',
+      'assets/backgrounds/cutscene/relay-hilltop-wide.webp',
+    );
+    this.load.image(
+      'cutscene-relay-entrance-medium',
+      'assets/backgrounds/cutscene/relay-entrance-medium.webp',
+    );
+    this.load.image(
+      'cutscene-relay-console-lever-up',
+      'assets/backgrounds/cutscene/relay-console-lever-up.webp',
+    );
+    this.load.image(
+      'cutscene-relay-console-lever-down',
+      'assets/backgrounds/cutscene/relay-console-lever-down.webp',
+    );
+    this.load.image('cutscene-relay-tower-on', 'assets/backgrounds/cutscene/relay-tower-on.webp');
+    this.load.image('cutscene-relay-tower-off', 'assets/backgrounds/cutscene/relay-tower-off.webp');
 
     // Wirehead (new 92×92 PixelLab sprite) — walk, attack, death, idle
     for (let i = 0; i < 6; i++) {
@@ -328,7 +363,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('title-bg-off', 'assets/title/bg-off.png');
     this.load.image('title-logo', 'assets/logo/logo-surge.png');
 
-    this.load.image('lobby-greenhouse', 'assets/backgrounds/lobby/greenhouse-v1.webp');
+    this.load.image('lobby-greenhouse', 'assets/backgrounds/lobby/greenhouse.webp');
     this.load.image('lobby-terminal', 'assets/sprites/props/lobby/terminal.webp');
     this.load.image('lobby-planter-bed', 'assets/sprites/props/lobby/planter-bed.webp');
     this.load.image('lobby-table', 'assets/sprites/props/lobby/table.webp');
@@ -336,7 +371,36 @@ export class BootScene extends Phaser.Scene {
     this.load.image('lobby-sidetable', 'assets/sprites/props/lobby/sidetable.webp');
     this.load.image('lobby-radio', 'assets/sprites/props/lobby/radio.webp');
     this.load.image('lobby-mapboard', 'assets/sprites/props/lobby/mapboard.png');
+    this.load.image('journey-icon-greenhouse', 'assets/sprites/ui/journey-greenhouse.png');
+    this.load.image('journey-icon-relay', 'assets/sprites/ui/journey-relay.png');
+    this.load.image('lobby-punchingbag', 'assets/sprites/props/lobby/punchingbag.png');
+    this.load.image('lobby-cushion', 'assets/sprites/props/lobby/cushion.png');
+    this.load.image('lobby-planter-square', 'assets/sprites/props/lobby/planter-square.png');
+    this.load.image('lobby-supply-shelf', 'assets/sprites/props/lobby/supply-shelf.png');
     this.load.image('lobby-map-full', 'assets/ui/map-full.png');
+    // Pre-blurred version of the full map, used as the RouteMapScene
+    // background. Pre-blurring at build time sidesteps Phaser 4's postFX
+    // API, which doesn't reliably apply blur in this build.
+    this.load.image('lobby-map-full-blur', 'assets/ui/map-full-blur.png');
+    // Highway route overlay — same coord space as lobby-map-full, loaded
+    // at native 2067×331 so the new RouteMapScene can position it at the
+    // same fraction of the full map it occupies (x≈0..0.75, y≈highway row).
+    this.load.image('ui-map-highway', 'assets/ui/map-highway.png');
+    // Substation route overlay — cropped from the same 2754×1536 full
+    // map as ui-map-highway. 1000×280 native; bottom-right corner
+    // lands at (1610, 350) on the full map → top-left (610, 70).
+    this.load.image('ui-map-substation', 'assets/ui/map-substation.png');
+    // Mall route overlay — 1513×789 native; cropped from the same
+    // 2754×1536 map-full coord space. Placement coords in
+    // RouteMapScene's ROUTE_OVERLAYS.
+    this.load.image('ui-map-mall', 'assets/ui/map-mall.png');
+    // Blurred variants of the three route overlays — crossfade in for
+    // the non-focused routes on RouteMapScene so they visually merge
+    // with the blurred map bg instead of vanishing. Generated via PIL
+    // GaussianBlur(radius=5) to match the bg blur.
+    this.load.image('ui-map-highway-blur', 'assets/ui/map-highway-blur.png');
+    this.load.image('ui-map-substation-blur', 'assets/ui/map-substation-blur.png');
+    this.load.image('ui-map-mall-blur', 'assets/ui/map-mall-blur.png');
 
     // Scavenger "working at the workbench" idle animation (9 frames,
     // west-facing) — used by the stationary lobby NPC next to the
@@ -348,6 +412,42 @@ export class BootScene extends Phaser.Scene {
         `assets/sprites/party/scavenger/anim/workbench-west/frame_${padded}.png`,
       );
     }
+
+    // Netrunner typing animation — 9-frame seated-at-desk loop (west
+    // facing). Sprite includes the chair, desk, and laptop integrated
+    // into every frame, so no separate prop is needed.
+    for (let i = 0; i < 9; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `netrunner-typing-west-${padded}`,
+        `assets/sprites/party/netrunner/anim/typing-west/frame_${padded}.png`,
+      );
+    }
+
+    // Cybermonk meditation — 8-frame cross-legged breathing loop,
+    // south-facing so the character reads as "seated meditating toward
+    // the viewer". No separate prop needed.
+    for (let i = 0; i < 8; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `cybermonk-meditate-south-${padded}`,
+        `assets/sprites/party/cybermonk/anim/meditate-south/frame_${padded}.png`,
+      );
+    }
+
+    // Vanguard punching bag — 9-frame boxing-drill loop (west facing).
+    // Bag + character are both baked into every frame; no separate
+    // prop. 136×136 canvas matches the rest of Vanguard's sprites.
+    for (let i = 0; i < 9; i++) {
+      const padded = i.toString().padStart(3, '0');
+      this.load.image(
+        `vanguard-punchingbag-west-${padded}`,
+        `assets/sprites/party/vanguard/anim/punchingbag-west/frame_${padded}.png`,
+      );
+    }
+
+    // UI icons
+    this.load.image('icon-rest-tent', 'assets/ui/icon-rest-tent.png');
 
     this.load.image('bg-overgrown-highway', 'assets/backgrounds/combat/overgrown_highway.webp');
     this.load.image(
@@ -386,6 +486,11 @@ export class BootScene extends Phaser.Scene {
     this.load.audio('sfx-heal-shimmer', 'assets/audio/sfx/heal-shimmer.mp3');
     this.load.audio('sfx-victory-jingle', 'assets/audio/sfx/victory-jingle.mp3');
     this.load.audio('sfx-defeat-sting', 'assets/audio/sfx/defeat-sting.mp3');
+    this.load.audio('music-signal-lost', 'assets/audio/music/signal-lost.mp3');
+    // Victory-cutscene SFX
+    this.load.audio('sfx-relay-lever', 'assets/audio/sfx/relay-lever.mp3');
+    this.load.audio('sfx-relay-broadcast', 'assets/audio/sfx/relay-broadcast.mp3');
+    this.load.audio('sfx-relay-beacon-blink', 'assets/audio/sfx/relay-beacon-blink.mp3');
     this.load.audio('sfx-item-use', 'assets/audio/sfx/item-use.mp3');
     this.load.audio('sfx-smoke-grenade', 'assets/audio/sfx/smoke-grenade.mp3');
 

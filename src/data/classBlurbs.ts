@@ -30,5 +30,5 @@ export const CLASS_LORE_BLURBS: Record<string, string> = {
   scavenger:
     'Third-generation picker. Knows which pre-fall malls still have batteries worth pulling and which ones will kill you.',
   cybermonk:
-    'Wandered in from the highway a year ago carrying nothing but a prayer drum. Hasn\'t left. Hasn\'t explained why.',
+    "Wandered in from the highway a year ago carrying nothing but a prayer drum. Hasn't left. Hasn't explained why.",
 };
