@@ -41,6 +41,12 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Pre-initialize the flag so BackgroundLoadScene's later set-to-true
+    // fires `changedata` (not `setdata` — which only fires on first-ever
+    // set of a key). Waiters in TitleScene only listen for `changedata`,
+    // so skipping this init causes the first Start-Game click to hang.
+    this.registry.set('assets:loaded', false);
+
     // Kick off background loading of everything else in parallel with Title.
     this.scene.launch('BackgroundLoad');
 

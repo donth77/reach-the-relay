@@ -377,7 +377,6 @@ export class BackgroundLoadScene extends Phaser.Scene {
     }
 
     // --- UI icons ---
-    this.load.image('icon-rest-tent', 'assets/ui/icon-rest-tent.png');
 
     // --- Combat backgrounds ---
     this.load.image('bg-overgrown-highway', 'assets/backgrounds/combat/overgrown_highway.webp');
