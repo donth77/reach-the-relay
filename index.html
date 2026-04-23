@@ -90,11 +90,36 @@
       canvas {
         display: block;
       }
+      /* Pre-Phaser splash — paints on first HTML parse so the user sees the
+         logo immediately instead of a blank #0a0a0a void while the JS bundle
+         downloads + parses + BootScene preloads. The logo image is already
+         <link rel="preload">'d above. Sits as a fixed overlay above the
+         canvas; TitleScene.create() fades + removes it once the real title
+         art is on screen. NOT a loading screen by Vibe Jam rules — no bar,
+         no text, just a static splash for visual continuity. */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0a0a0a;
+        pointer-events: none;
+        transition: opacity 250ms ease-out;
+      }
+      #splash img {
+        max-width: 70vw;
+        max-height: 50vh;
+        width: auto;
+        height: auto;
+      }
     </style>
   </head>
   <body>
+    <div id="splash"><img src="./assets/logo/logo-surge.png" alt="Reach the Relay" /></div>
     <div id="game"></div>
     <script type="module" src="/src/main.ts"></script>
-    <script async src="https://vibej.am/2026/widget.js"></script>
+    <script async src="https://vibejam.cc/2026/widget.js"></script>
   </body>
 </html>

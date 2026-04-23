@@ -110,6 +110,16 @@ export class TitleScene extends Phaser.Scene {
     logo.setScale(LOGO_TARGET_WIDTH / logo.width);
     this.logo = logo;
 
+    // Fade out the pre-Phaser HTML splash (index.html #splash) now that the
+    // real title art is painted. Kept here (not in BootScene) so the splash
+    // stays visible through the entire preload — there's nothing on screen
+    // before this point that would justify removing it.
+    const splash = document.getElementById('splash');
+    if (splash) {
+      splash.style.opacity = '0';
+      window.setTimeout(() => splash.remove(), 300);
+    }
+
     // Keyboard nav can be wired immediately; the handlers check for menuRows
     // length and no-op until the menu is built.
     this.input.keyboard?.on('keydown-UP', () => this.moveSelection(-1));
@@ -263,7 +273,10 @@ export class TitleScene extends Phaser.Scene {
       // No callsign gate — leaderboard participation is optional. If the
       // player wins without a callsign, the RunComplete screen offers
       // an inline opt-in prompt before submitting.
-      this.scene.start('LeaderSelect');
+      // Wait for BackgroundLoadScene to finish (party sprites etc. live
+      // there now — see BootScene + BackgroundLoadScene). On a decent
+      // connection this is already done by the time the user clicks.
+      this.waitForAssetsThen(() => this.scene.start('LeaderSelect'));
     } else if (row.id === 'Leaderboard') {
       this.scene.start('Leaderboard', {
         initialFilter: 'all',
@@ -274,6 +287,26 @@ export class TitleScene extends Phaser.Scene {
       // on open, and without the delay the same click that opened it also closes it.
       this.time.delayedCall(1, () => openBriefing(this));
     }
+  }
+
+  /**
+   * If BackgroundLoadScene has finished, invoke `next` immediately.
+   * Otherwise subscribe to the registry flag it sets on completion and
+   * invoke once it flips. Used to gate Start Game / dev-test transitions
+   * on the deferred sprite/SFX/music bundle.
+   */
+  private waitForAssetsThen(next: () => void): void {
+    if (this.registry.get('assets:loaded')) {
+      next();
+      return;
+    }
+    const onChange = (_parent: unknown, key: string, value: unknown): void => {
+      if (key === 'assets:loaded' && value) {
+        this.registry.events.off('changedata', onChange);
+        next();
+      }
+    };
+    this.registry.events.on('changedata', onChange);
   }
 
   /**
