@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { BackgroundLoadScene } from './scenes/BackgroundLoadScene';
+import { CombatLoadScene } from './scenes/CombatLoadScene';
 import { TitleScene } from './scenes/TitleScene';
 import { LeaderSelectScene } from './scenes/LeaderSelectScene';
 import { LobbyScene } from './scenes/LobbyScene';
@@ -38,6 +39,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [
     BootScene,
     BackgroundLoadScene,
+    CombatLoadScene,
     TitleScene,
     LeaderSelectScene,
     LobbyScene,

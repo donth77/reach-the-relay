@@ -54,10 +54,11 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Pre-initialize the flag so BackgroundLoadScene's later set-to-true
-    // fires `changedata` (not `setdata` — which only fires on first-ever
-    // set of a key). Waiters that listen for `changedata` would otherwise
-    // miss the very first transition to true.
+    // Pre-initialize both tier flags so the later set-to-true fires
+    // `changedata` (not `setdata` — which only fires on first-ever set of
+    // a key). Waiters listen for `changedata`, so without the pre-init
+    // they'd miss the very first transition to true.
+    this.registry.set('assets:lobby-loaded', false);
     this.registry.set('assets:loaded', false);
 
     // Kick off background loading of everything else in parallel with
@@ -71,22 +72,22 @@ export class BootScene extends Phaser.Scene {
     if (isPortalEntry()) {
       setLeader(DEFAULT_PORTAL_LEADER);
       for (const id of DEFAULT_PORTAL_RECRUITS) addRecruit(id);
-      // Lobby needs the full asset bundle. Wait for BackgroundLoad if
-      // it's still in flight before transitioning.
-      this.waitForAssetsThen(() => this.scene.start('Lobby'));
+      // Lobby needs the lobby-tier bundle (party world anims, NPCs, lobby
+      // bg + props). Wait if BackgroundLoad is still in flight.
+      this.waitForLobbyAssetsThen(() => this.scene.start('Lobby'));
       return;
     }
 
     this.scene.start('Title');
   }
 
-  private waitForAssetsThen(next: () => void): void {
-    if (this.registry.get('assets:loaded')) {
+  private waitForLobbyAssetsThen(next: () => void): void {
+    if (this.registry.get('assets:lobby-loaded')) {
       next();
       return;
     }
     const onChange = (_parent: unknown, key: string, value: unknown): void => {
-      if (key === 'assets:loaded' && value) {
+      if (key === 'assets:lobby-loaded' && value) {
         this.registry.events.off('changedata', onChange);
         next();
       }
