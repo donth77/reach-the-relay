@@ -1389,11 +1389,16 @@ export class CombatScene extends Phaser.Scene {
 
     // Keyboard navigation: arrows + WASD to move, Enter to confirm.
     // 2-col grid; UP/DOWN moves by cols (clamped), LEFT/RIGHT moves ±1 wrap.
-    // No selection indicator is drawn until hover or the first keyboard
-    // input — showing a default chevron on touch devices (no hover events)
-    // reads as a confusing pre-selected state.
+    // On touch, no selection indicator is drawn until hover or the first
+    // keyboard input — a default chevron on touch devices (no hover events)
+    // reads as a confusing pre-selected state. On desktop we auto-focus the
+    // first usable option so keyboard/mouse players can confirm immediately.
     const firstUsable = canUseFlags.findIndex((c) => c);
     if (firstUsable >= 0) selectedIdx = firstUsable;
+    if (!isTouchDevice()) {
+      selectionActive = true;
+      selectFns[selectedIdx]?.();
+    }
 
     const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
       const n = abilities.length;
@@ -1594,8 +1599,13 @@ export class CombatScene extends Phaser.Scene {
         }
       });
     };
-    // No focus indicator is shown until hover or the first keyboard input —
-    // a default-selected enemy on touch devices reads as pre-committed.
+    // On touch, no focus indicator is shown until hover or the first keyboard
+    // input — a default-selected enemy on touch devices reads as pre-committed.
+    // On desktop we auto-focus the first target so Enter confirms immediately.
+    if (!isTouchDevice()) {
+      selectionActive = true;
+      updateSelection();
+    }
 
     // Grid nav: LEFT/RIGHT wrap along linear index; UP/DOWN move by cols (clamp).
     // All handlers no-op while the pause menu is open so its own
@@ -1877,8 +1887,9 @@ export class CombatScene extends Phaser.Scene {
 
     // Keyboard navigation (matches showActionMenu pattern). BACK is
     // integrated as a virtual extra cell so arrows + Enter reach it.
-    // No default indicator is drawn until hover or the first keyboard
-    // input — a pre-selected button on touch reads as already-chosen.
+    // On touch, no default indicator is drawn until hover or the first
+    // keyboard input — a pre-selected button on touch reads as
+    // already-chosen. On desktop we auto-focus the first usable item.
     const firstUsable = canUseFlags.findIndex((c) => c);
     if (firstUsable >= 0) selectedIdx = firstUsable;
     const applySelection = (idx: number): void => {
@@ -1889,6 +1900,10 @@ export class CombatScene extends Phaser.Scene {
         selectFns[idx]?.();
       }
     };
+    if (!isTouchDevice()) {
+      selectionActive = true;
+      applySelection(selectedIdx);
+    }
 
     const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
       const n: number = ITEM_ORDER.length;
