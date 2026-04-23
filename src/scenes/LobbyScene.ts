@@ -1569,6 +1569,12 @@ export class LobbyScene extends Phaser.Scene {
     const hasReturn = !!this.portalRefUrl;
     const midX = (DOORWAY_X_LEFT + DOORWAY_X_RIGHT) / 2;
 
+    // When both labels are shown the doorway is too narrow (~118px) for
+    // them to sit side-by-side, so stack vertically: VIBE JAM higher up,
+    // RETURN just above the doorway. The half-doorway X-centers keep the
+    // left/right "this side goes here" cue.
+    const STACK_OFFSET = 28;
+
     // Exit portal (Vibe Jam) — cyan/magenta pulse.
     const exitLeftX = hasReturn ? midX : DOORWAY_X_LEFT;
     this.paintPortalZone(
@@ -1578,6 +1584,7 @@ export class LobbyScene extends Phaser.Scene {
       DOORWAY_Y_BOTTOM - DOORWAY_Y_TOP,
       0xff66ff,
       'VIBE JAM ▼',
+      hasReturn ? STACK_OFFSET : 0,
     );
 
     if (hasReturn) {
@@ -1588,6 +1595,7 @@ export class LobbyScene extends Phaser.Scene {
         DOORWAY_Y_BOTTOM - DOORWAY_Y_TOP,
         0x66ffcc,
         'RETURN ▼',
+        0,
       );
     }
   }
@@ -1606,8 +1614,9 @@ export class LobbyScene extends Phaser.Scene {
     _h: number,
     colorHex: number,
     label: string,
+    extraYOffset = 0,
   ): void {
-    const labelY = y - 8;
+    const labelY = y - 8 - extraYOffset;
     const text = this.add
       .text(x + w / 2, labelY, label, {
         fontFamily: FONT,

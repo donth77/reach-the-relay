@@ -12,10 +12,10 @@
 
 // Default party when arriving via portal. Chosen for recognizability: Vanguard
 // is the tank with the most-polished lobby walking animation, and Medic +
-// Scavenger give the visitor a balanced 3-person crew without forcing them
-// through PartySelect.
+// Netrunner give the visitor a balanced 3-person crew (Kael + Nico + Echo)
+// without forcing them through PartySelect.
 export const DEFAULT_PORTAL_LEADER = 'vanguard';
-export const DEFAULT_PORTAL_RECRUITS: readonly string[] = ['medic', 'scavenger'];
+export const DEFAULT_PORTAL_RECRUITS: readonly string[] = ['medic', 'netrunner'];
 
 export interface PortalEntryParams {
   portal: boolean;
