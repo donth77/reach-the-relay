@@ -34,7 +34,26 @@ export function isUsernamePromptOpen(): boolean {
  */
 export function openUsernamePrompt(
   scene: Phaser.Scene,
-  opts: { onConfirm: (username: string) => void; onCancel?: () => void },
+  opts: {
+    onConfirm: (username: string) => void;
+    onCancel?: () => void;
+    // Optional header text — defaults to "> ENTER CALLSIGN" for the
+    // first-time prompt case. Callers that already have a stored name
+    // and are re-confirming (e.g. RunComplete submit flow) should pass
+    // something that frames the action as "are you sure you want to
+    // submit?" rather than "enter your name."
+    title?: string;
+    // Optional subtitle — when set, replaces the default charset help
+    // line. Used by the submit flow to surface the score the player
+    // is about to send (e.g. "SCORE 185").
+    subtitle?: string;
+    // When true, render an explicit red [ CANCEL ] button next to
+    // [ CONFIRM ]. Used by the auto-opened submit-confirm flow where
+    // "don't submit" is a first-class action the player must be able to
+    // pick without hunting for the X/ESC/backdrop. When false (default),
+    // only the X + tap-outside carry the cancel affordance.
+    showCancelButton?: boolean;
+  },
 ): void {
   if (promptOpen) return;
   promptOpen = true;
@@ -62,22 +81,34 @@ export function openUsernamePrompt(
 
   container.add(
     scene.add
-      .text(width / 2, height / 2 - 130, '> ENTER CALLSIGN', {
+      .text(width / 2, height / 2 - 130, opts.title ?? '> ENTER CALLSIGN', {
         fontFamily: FONT,
         fontSize: '32px',
         color: '#8aff8a',
       })
       .setOrigin(0.5),
   );
-  container.add(
-    scene.add
-      .text(width / 2, height / 2 - 80, 'Letters, numbers, space, underscore — 1 to 16 chars', {
-        fontFamily: FONT,
-        fontSize: '14px',
-        color: '#6aaa8a',
-      })
-      .setOrigin(0.5),
-  );
+  if (opts.subtitle) {
+    container.add(
+      scene.add
+        .text(width / 2, height / 2 - 80, opts.subtitle, {
+          fontFamily: FONT,
+          fontSize: '22px',
+          color: '#ffdd55',
+        })
+        .setOrigin(0.5),
+    );
+  } else {
+    container.add(
+      scene.add
+        .text(width / 2, height / 2 - 80, 'Letters, numbers, space, underscore — 1 to 16 chars', {
+          fontFamily: FONT,
+          fontSize: '14px',
+          color: '#6aaa8a',
+        })
+        .setOrigin(0.5),
+    );
+  }
 
   let buffer = getUsername() ?? '';
 
@@ -167,8 +198,12 @@ export function openUsernamePrompt(
     close();
     opts.onCancel?.();
   };
+  // When the caller asked for an explicit cancel button, split the
+  // button row into [ CONFIRM ] (left) + [ CANCEL ] (right). Otherwise
+  // CONFIRM sits centered on its own.
+  const confirmX = opts.showCancelButton ? width / 2 - 130 : width / 2;
   const confirmBtn = createHoverButton(scene, {
-    x: width / 2,
+    x: confirmX,
     y: BTN_Y,
     label: '[ CONFIRM ]',
     fontSize: '22px',
@@ -178,6 +213,21 @@ export function openUsernamePrompt(
     onClick: tryConfirm,
   });
   container.add(confirmBtn);
+  if (opts.showCancelButton) {
+    const cancelBtn = createHoverButton(scene, {
+      x: width / 2 + 130,
+      y: BTN_Y,
+      label: '[ CANCEL ]',
+      fontSize: '22px',
+      idleBg: '#4a1a1a',
+      hoverBg: '#6a2f2f',
+      idleColor: '#ffaaaa',
+      hoverColor: '#ffffff',
+      padding: { x: 20, y: 10 },
+      onClick: doSkip,
+    });
+    container.add(cancelBtn);
+  }
 
   // Close [X] button in the panel's top-right corner.
   const xBtnSize = 36;

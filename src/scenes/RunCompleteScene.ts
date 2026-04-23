@@ -166,50 +166,81 @@ export class RunCompleteScene extends Phaser.Scene {
         },
       });
 
-      if (getUsername()) {
-        // On re-entry from Leaderboard BACK, skip the network round-trip
-        // and paint the rank we already resolved. Only submit fresh if
-        // no cache or the score somehow differs.
-        if (cachedSubmitResult && cachedSubmitResult.score === finalScore) {
-          const r = cachedSubmitResult;
-          if (r.rank !== null) {
-            const suffix = r.source === 'local' ? ' (local)' : '';
-            rankText.setText(`RANK  #${r.rank}${suffix}`);
-            rankText.setColor(r.source === 'local' ? '#ffbb66' : '#8aff8a');
-          } else {
-            rankText.setText('RANK  —');
-            rankText.setColor('#888');
-          }
+      if (cachedSubmitResult && cachedSubmitResult.score === finalScore) {
+        // Re-entry from Leaderboard BACK — rank already resolved this run,
+        // just repaint it. Don't re-prompt.
+        const r = cachedSubmitResult;
+        if (r.rank !== null) {
+          const suffix = r.source === 'local' ? ' (local)' : '';
+          rankText.setText(`RANK  #${r.rank}${suffix}`);
+          rankText.setColor(r.source === 'local' ? '#ffbb66' : '#8aff8a');
         } else {
           rankText.setText('RANK  —');
-          void this.submitLeaderboardEntry(finalScore, rankText);
+          rankText.setColor('#888');
         }
       } else {
-        // No callsign — SUBMIT button in the left slot. Rank text hidden
-        // until the player submits successfully.
+        // Fresh victory — leaderboard submission is always opt-in. The
+        // player must explicitly press CONFIRM before anything is sent.
+        //
+        // Flow:
+        //   - If a callsign is already stored (returning player / portal
+        //     inbound), auto-open the prompt with the name prefilled and
+        //     title "SUBMIT TO LEADERBOARD?" — single CONFIRM tap ships
+        //     the score, X/ESC cancels back to the SUBMIT SCORE button.
+        //   - If no callsign, show the SUBMIT SCORE button and wait for
+        //     the player to click it before opening the "ENTER CALLSIGN"
+        //     prompt.
         rankText.setVisible(false);
-        const submitBtn = createHoverButton(this, {
-          x: LEFT_X,
-          y: ROW_Y,
-          label: '[ SUBMIT SCORE ]',
-          fontSize: '24px',
-          padding: { x: 18, y: 8 },
-          ...GOLD_BUTTON_STYLE,
-          onClick: () => {
-            openUsernamePrompt(this, {
-              onConfirm: () => {
-                submitBtn.destroy();
-                rankText!.setVisible(true);
-                rankText!.setText('RANK  —');
-                rankText!.setColor('#8aa5cf');
-                void this.submitLeaderboardEntry(finalScore, rankText!, true);
-              },
-              onCancel: () => {
-                // No-op — button stays for a retry.
-              },
-            });
-          },
-        });
+        const hasStoredCallsign = !!getUsername();
+
+        const showSubmitButton = (): void => {
+          const submitBtn = createHoverButton(this, {
+            x: LEFT_X,
+            y: ROW_Y,
+            label: '[ SUBMIT SCORE ]',
+            fontSize: '24px',
+            padding: { x: 18, y: 8 },
+            ...GOLD_BUTTON_STYLE,
+            onClick: () => {
+              // Button-triggered open uses the default "ENTER CALLSIGN"
+              // framing — the submit-confirm title + score subtitle are
+              // reserved for the auto-open-on-arrival case.
+              openUsernamePrompt(this, {
+                onConfirm: () => {
+                  submitBtn.destroy();
+                  rankText!.setVisible(true);
+                  rankText!.setText('RANK  —');
+                  rankText!.setColor('#8aa5cf');
+                  void this.submitLeaderboardEntry(finalScore, rankText!, true);
+                },
+                onCancel: () => {
+                  // No-op — button stays for a retry.
+                },
+              });
+            },
+          });
+        };
+
+        if (hasStoredCallsign) {
+          openUsernamePrompt(this, {
+            title: '> SUBMIT TO LEADERBOARD?',
+            subtitle: `SCORE ${finalScore}`,
+            showCancelButton: true,
+            onConfirm: () => {
+              rankText!.setVisible(true);
+              rankText!.setText('RANK  —');
+              rankText!.setColor('#8aa5cf');
+              void this.submitLeaderboardEntry(finalScore, rankText!, true);
+            },
+            onCancel: () => {
+              // Player opted out of this run's submission — give them
+              // a retry affordance instead of silently doing nothing.
+              showSubmitButton();
+            },
+          });
+        } else {
+          showSubmitButton();
+        }
       }
 
       if (DEBUG_LEADERBOARD_PROD) {
@@ -291,20 +322,10 @@ export class RunCompleteScene extends Phaser.Scene {
     // preserving the existing per-button pointer handlers.
     type FocusableBtn = { text: Phaser.GameObjects.Text; activate: () => void };
     const focusables: FocusableBtn[] = [];
-    // Only the `submitBtn` variant uses the `leaderboardBtn` rendered
-    // above; rebuild the focusable list from whichever buttons exist
-    // on the stage now.
-    if (this.outcome === 'victory') {
-      if (rankText && !getUsername()) {
-        // Submit button was rendered — find it (only interactive gold
-        // pill on the left slot). We added `submitBtn` above; pick it
-        // up via children lookup on the scene.
-      }
-    }
-    // Simpler: explicit references (already have `continueBtn`; rebuild
-    // the inline refs here).
-    // — collect interactive children in insertion order, filter to
-    // the two gold pills + continue.
+    // Collect interactive children in insertion order, filter to the
+    // gold pills + continue. [ SUBMIT SCORE ] only exists on the
+    // pre-submit path; once confirmed it's destroyed and replaced by
+    // the rank text.
     const children = this.children.getAll() as Phaser.GameObjects.Text[];
     for (const child of children) {
       if (!(child instanceof Phaser.GameObjects.Text)) continue;
