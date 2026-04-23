@@ -43,22 +43,11 @@ export function effectiveMult(scene: Phaser.Scene, cat: AudioCategory): number {
 export function initAudioSettings(game: Phaser.Game): void {
   for (const cat of ['master', 'music', 'sfx'] as AudioCategory[]) {
     let v = 1;
-    let hasStoredValue = false;
     try {
       const raw = localStorage.getItem(STORAGE_KEY[cat]);
-      if (raw !== null) {
-        v = clamp01(parseFloat(raw));
-        hasStoredValue = true;
-      }
+      if (raw !== null) v = clamp01(parseFloat(raw));
     } catch {
       /* localStorage unavailable */
-    }
-    // First-visit default for music: if the browser's audio context is locked
-    // (autoplay blocked), default to muted so the toggle icon accurately
-    // reflects what the user will hear. First click of the toggle unmutes
-    // AND counts as the user gesture that unlocks the audio context.
-    if (!hasStoredValue && cat === 'music' && game.sound.locked) {
-      v = 0;
     }
     game.registry.set(REGISTRY_KEY[cat], v);
   }
