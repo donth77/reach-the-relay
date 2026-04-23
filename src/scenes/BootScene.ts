@@ -70,6 +70,9 @@ export class BootScene extends Phaser.Scene {
     // into the walkable Lobby with a default party. The webring spec
     // mandates "no loading screens, no input screens" for continuity.
     if (isPortalEntry()) {
+      // Splash is normally removed by TitleScene.create(). Portal path skips
+      // Title, so remove it here or it stays pinned over the Lobby canvas.
+      document.getElementById('splash')?.remove();
       setLeader(DEFAULT_PORTAL_LEADER);
       for (const id of DEFAULT_PORTAL_RECRUITS) addRecruit(id);
       // Lobby needs the lobby-tier bundle (party world anims, NPCs, lobby
