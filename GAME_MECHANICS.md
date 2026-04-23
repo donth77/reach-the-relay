@@ -46,7 +46,7 @@ if enemy-vs-guarded (not ignoresGuard):      damage = max(1, floor(damage / 2))
 | ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------ |
 | `guarding`          | Vanguard GUARD             | Next incoming enemy hit is redirected to the guardian AND halved. `ignoresGuard` bypasses.       |
 | `shielded`          | Medic SHIELD               | Next incoming damage is halved. Works against `ignoresGuard` (e.g. Wreckwarden).                 |
-| `tauntedBy`         | Vanguard TAUNT             | Target's next **single-target** action forced onto the taunter. Full damage (no half). Works on bosses' normal attack. AoE moves (Nanite Swarm, Wreckwarden COOLANT SLAM) and Wreckwarden SHOCKWAVE ignore it. |
+| `tauntedBy`         | Vanguard TAUNT             | Target's next **single-target** action forced onto the taunter. Full damage (no half). Works on bosses' normal attack. AoE moves (Nanite Swarm, Wreckwarden COOLANT SLAM) and Wreckwarden SHOCKWAVE ignore the redirect AND still consume the TAUNT — so TAUNT always lasts exactly one enemy turn. |
 | `atbModifier`       | Netrunner FROSTLOCK        | Target ATB fill ×0.5 for 2 turns.                                                                |
 | ATB fill (direct)   | Medic AMP                  | Target's ATB gauge is set to max immediately — grants a free turn. No ongoing modifier.          |
 | `missing`           | Smoke Grenade item         | All enemies' next action is an auto-miss.                                                        |
@@ -131,7 +131,7 @@ The boss cycles through three moves on a strict rotation:
 | 2             | **SHOCKWAVE**   | 1.0×  | ⚡ surge | Weighted random party member (3:2:1 highest-ATB / random / last damager). Also **resets target's ATB to 0**. Ignores TAUNT. |
 | 3             | **COOLANT SLAM**| 0.8×  | ❄ coolant| **AoE** — every living party member. VIP is exempt. Ignores TAUNT. |
 
-Vanguard's GUARD is useless vs Wreckwarden (`ignoresGuard: true`). TAUNT only works on the turn-1 normal attack — SHOCKWAVE and COOLANT SLAM bypass it so the boss rotation isn't neutralized. Medic SHIELD still halves.
+Vanguard's GUARD is useless vs Wreckwarden (`ignoresGuard: true`). TAUNT only works on the turn-1 normal attack — SHOCKWAVE and COOLANT SLAM both bypass the redirect AND consume the TAUNT, so a mistimed TAUNT is wasted on the ignoring phase rather than carrying over. Medic SHIELD still halves.
 
 ### Enemy behaviors
 
@@ -182,7 +182,10 @@ Picked 50/50 at run start. Both end with the Wreckwarden boss in the substation 
 - **Variant A (2 encounters)**: Wirehead+Spider+Sentry opener → **Rest** (partial) → Wreckwarden.
 - **Variant B (3 encounters)**: Sentry+Sentry → Wirehead+Spider+Sentry → **Rest** (full, pre-boss) → Wreckwarden.
 
-The 3-encounter variant's rest is flagged `isBoss: true` on the next encounter, which upgrades the restore from the mid-route partial (50% HP/MP) to a full restore. Sims showed the 2-encounter variant already sits near band at partial restore, so only the longer variant needs the full-restore exception.
+Two flags on the boss encounter drive behavior at the preceding rest:
+
+- `isBoss: true` → rest-stop screen shows "FINAL CAMP" instead of "REST STOP" (both substation variants set this).
+- `preBossFullRestore: true` → restore jumps from partial (50% HP/MP, 15% VIP) to full (100% all). Only the 3-encounter variant sets this — sims showed it drops to <2% win at partial rest; the 2-encounter variant already sits near band and stays on partial.
 
 ---
 

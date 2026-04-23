@@ -7,11 +7,16 @@ export interface EncounterDef {
   // Per-encounter background override. Takes priority over the route's
   // backgroundVariants pool. Used for boss-specific arenas.
   backgroundKey?: string;
-  // Marks this encounter as a boss fight. Currently only affects the
-  // rest-stop IMMEDIATELY before it: that rest fully restores HP/MP
-  // instead of partial. Keeps "mid-route rests" as partial strategic
-  // recovery while turning the pre-boss rest into a proper "last camp."
+  // Marks this encounter as a boss fight. Drives UI presentation — the
+  // rest stop IMMEDIATELY before it labels itself "FINAL CAMP" instead
+  // of "REST STOP" so the player knows the big fight is next.
+  // Does NOT change restore amounts; that's gated by preBossFullRestore.
   isBoss?: boolean;
+  // Opt-in full restore at the preceding rest stop (HP/MP/VIP → 100%).
+  // Default behavior is partial restore even before a boss; only set
+  // this when sim/playtest shows partial rest leaves the party too
+  // drained to have a fair shot at the boss.
+  preBossFullRestore?: boolean;
 }
 
 export interface BackgroundVariant {
@@ -209,6 +214,10 @@ export const ROUTES: RouteDef[] = [
             // +10 on top to drop them below the horizon line.
             partyYOffset: 40,
             backgroundKey: 'bg-dead-substation-boss',
+            // 2-enc variant: still a boss fight (show FINAL CAMP title),
+            // but balance sims show it's fair at partial restore —
+            // so no preBossFullRestore flag here.
+            isBoss: true,
           },
         ],
         restAfter: [0],
@@ -225,13 +234,14 @@ export const ROUTES: RouteDef[] = [
             enemyYOffset: -30,
             partyYOffset: 40,
             backgroundKey: 'bg-dead-substation-boss',
-            // 3-encounter variant ONLY: flag the boss so the pre-boss rest
-            // upgrades from partial (50%) to full restore. Sims showed the
-            // 2-encounter variant already sits at ~49% win with partial
-            // rest, but the 3-encounter variant drops to <2% — the extra
-            // fight of attrition drains the party beyond what a partial
-            // rest can recover before the Wreckwarden.
             isBoss: true,
+            // 3-encounter variant ONLY: upgrade the pre-boss rest from
+            // partial (50%) to full restore. Sims showed the 2-encounter
+            // variant sits at ~49% win with partial rest, but the
+            // 3-encounter variant drops to <2% — the extra fight of
+            // attrition drains the party beyond what a partial rest
+            // can recover before the Wreckwarden.
+            preBossFullRestore: true,
           },
         ],
         restAfter: [1],

@@ -5,6 +5,7 @@ import { FONT } from '../util/ui';
 import { createHoverButton } from '../util/button';
 import { installPauseMenuEsc } from '../util/pauseMenu';
 import { ITEMS, ITEM_ORDER } from '../data/items';
+import { playSfx } from '../util/audio';
 
 // Partial-rest percentages (mid-route rest stop).
 const HEAL_HP_PCT = 0.5;
@@ -28,16 +29,17 @@ export class RestScene extends Phaser.Scene {
     const run = getRun();
     this.cameras.main.setBackgroundColor('#14241a');
 
-    // Pre-boss rest = full restore. Detected by peeking at the NEXT
-    // encounter (run.encounterIndex already advanced past the cleared one
-    // in CombatScene.winEncounter). If that encounter is flagged as a
-    // boss, upgrade HP/MP/VIP restore to 100%. Otherwise, normal
-    // partial restore.
+    // Rest framing — title/subtitle key off `isBoss` so the player sees
+    // "FINAL CAMP" whenever a boss is next, regardless of restore amount.
+    // The full-restore effect itself is a separate, opt-in flag
+    // (`preBossFullRestore`) so balance can gate it per-route (e.g. the
+    // 3-variant substation needs it, the 2-variant doesn't).
     const nextEnc = run.route.encounters[run.encounterIndex];
     const preBoss = nextEnc?.isBoss === true;
-    const hpPct = preBoss ? PRE_BOSS_HP_PCT : HEAL_HP_PCT;
-    const mpPct = preBoss ? PRE_BOSS_MP_PCT : HEAL_MP_PCT;
-    const vipPct = preBoss ? PRE_BOSS_VIP_PCT : HEAL_VIP_PCT;
+    const fullRestore = nextEnc?.preBossFullRestore === true;
+    const hpPct = fullRestore ? PRE_BOSS_HP_PCT : HEAL_HP_PCT;
+    const mpPct = fullRestore ? PRE_BOSS_MP_PCT : HEAL_MP_PCT;
+    const vipPct = fullRestore ? PRE_BOSS_VIP_PCT : HEAL_VIP_PCT;
 
     // Snapshot pre-rest values so the render pass can show the exact
     // delta each member gained (`+13 HP`, `+10 MP`, `REVIVED +18` for
@@ -59,9 +61,9 @@ export class RestScene extends Phaser.Scene {
       const wasKo = current <= 1;
       let next: number;
       if (wasKo) {
-        // Pre-boss: even a KO'd ally comes back to full. Otherwise
+        // Full restore: even a KO'd ally comes back to full. Otherwise
         // partial revive per REVIVE_KO_PCT.
-        next = preBoss ? def.hp : Math.round(def.hp * REVIVE_KO_PCT);
+        next = fullRestore ? def.hp : Math.round(def.hp * REVIVE_KO_PCT);
       } else {
         next = Math.min(def.hp, Math.round(current + def.hp * hpPct));
       }
@@ -85,9 +87,15 @@ export class RestScene extends Phaser.Scene {
     // D&D-style: limited abilities (GUARD, TAUNT, SALVAGE) refill on rest.
     refillAbilityUsesOnRest();
 
+    // Soft heal shimmer on scene entry — signals "party healed" the
+    // moment the screen appears, paired with the visible +HP/+MP deltas.
+    playSfx(this, 'sfx-heal-shimmer', 0.6);
+
     const title = preBoss ? 'FINAL CAMP' : 'REST STOP';
     const subtitle = preBoss
-      ? 'Everything hinges on the next fight. The party readies in full.'
+      ? fullRestore
+        ? 'Everything hinges on the next fight. The party readies in full.'
+        : 'The boss is next. One last breath before the fight.'
       : 'A brief moment of quiet. The party catches their breath.';
 
     // Title + subtitle sizing / placement matches RunCompleteScene so the
@@ -240,12 +248,26 @@ export class RestScene extends Phaser.Scene {
       advanced = true;
       this.scene.start('Journey', { fromRest: true });
     };
-    createHoverButton(this, {
+    // Prominent CONTINUE button — larger touch target, stronger idle/hover
+    // contrast. No idle pulse / scale tween.
+    const continueBtn = createHoverButton(this, {
       x: width / 2,
       y: height - 100,
-      label: '[ Continue ]',
-      fontSize: '32px',
+      label: 'CONTINUE  ▶',
+      fontSize: '36px',
+      idleColor: '#0f1a0f',
+      hoverColor: '#0f1a0f',
+      idleBg: '#8aff8a',
+      hoverBg: '#b4ffb4',
+      padding: { x: 44, y: 18 },
       onClick: advance,
+    });
+    // Press-state flash so touch taps feel responsive (no hover on mobile).
+    continueBtn.on('pointerdown', () => {
+      continueBtn.setBackgroundColor('#5ccf5c');
+    });
+    continueBtn.on('pointerup', () => {
+      continueBtn.setBackgroundColor('#b4ffb4');
     });
     this.input.keyboard?.once('keydown-E', advance);
     this.input.keyboard?.once('keydown-ENTER', advance);

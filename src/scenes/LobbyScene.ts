@@ -270,7 +270,7 @@ export class LobbyScene extends Phaser.Scene {
     this.spawnSideTableWithRadio(1000, 350, 0.85);
     // 128×199 native; tall narrow silhouette scales
     // cleanly at 0.5 (integer divisor → crisp nearest-neighbor).
-    this.spawnSupplyShelf(880, 325, 0.9);
+    this.spawnSupplyShelf(830, 325, 0.9);
     // Freestanding punching bag on the walkable floor just LEFT of the
     // doorway (doorway x-range 581-699). Decor only — pairs with the
     // Vanguard's punchingbag NPC idle animation so training gear is

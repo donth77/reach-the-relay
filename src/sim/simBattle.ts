@@ -563,7 +563,8 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
   if (sig && shock) {
     const phase = (enemy.turnCount - 1) % 3;
     if (phase === 1) {
-      // Shockwave
+      // Shockwave — non-redirect phase consumes TAUNT.
+      enemy.tauntedBy = null;
       if (party.length === 0) return;
       const target = pickShockwaveTarget(enemy, party, rng);
       const dmg = calcDamage(enemy, target, shock.power, shock.element, rng);
@@ -572,7 +573,8 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
       return;
     }
     if (phase === 2) {
-      // Signature AoE
+      // Signature AoE — non-redirect phase consumes TAUNT.
+      enemy.tauntedBy = null;
       for (const p of party) {
         const dmg = calcDamage(enemy, p, sig.power, sig.element, rng);
         applyDamage(p, dmg);
@@ -583,6 +585,7 @@ function enemyTurn(enemy: SimUnit, all: SimUnit[], rng: RNG): void {
     // Simple alternation for AoE-only bosses (currently unused — wreckwarden has both)
     const phase = enemy.turnCount % 2;
     if (phase === 0) {
+      enemy.tauntedBy = null;
       for (const p of party) {
         const dmg = calcDamage(enemy, p, sig.power, sig.element, rng);
         applyDamage(p, dmg);

@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { hasRun, endRun } from '../state/run';
+import { resetLobbyForNextRun } from '../state/lobby';
 import { FONT } from './ui';
 import { playSfx } from './audio';
 import { buildAudioSettingsPanel } from './audioSettingsPanel';
@@ -135,11 +136,29 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
   ];
 
   if (canAbandon) {
+    // Abandoning a run drops the player back at the Lobby so they can
+    // regroup and try a different route / crew without being forced
+    // to re-pick a leader. "Return to title" (below) is the separate
+    // full-reset path. Force-stops every mid-run scene so nothing
+    // leaks under the new Lobby render.
     const onAbandonAction =
       opts.onAbandon ??
       ((): void => {
         endRun();
-        scene.scene.start(titleKey);
+        resetLobbyForNextRun();
+        const sm = scene.scene.manager;
+        for (const key of [
+          'PartySelectTerminal',
+          'Combat',
+          'Route',
+          'RouteMap',
+          'Journey',
+          'Rest',
+          'RunComplete',
+        ]) {
+          if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
+        }
+        scene.scene.start('Lobby');
       });
     rowSpecs.push({
       id: 'abandon',

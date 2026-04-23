@@ -1343,13 +1343,20 @@ export class CombatScene extends Phaser.Scene {
       }
     };
 
-    const keyLeft = () => navigate('left');
-    const keyRight = () => navigate('right');
-    const keyUp = () => navigate('up');
-    const keyDown = () => navigate('down');
-    const keyConfirm = () => {
-      if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
+    // Pause-menu guard — when the combat pause menu is open, its own
+    // keyboard handlers own UP/DOWN/ENTER/SPACE/E for row navigation.
+    // Action-menu keys must no-op so the two don't both respond.
+    const guard = (fn: () => void) => (): void => {
+      if (this.pauseMenuOpen) return;
+      fn();
     };
+    const keyLeft = guard(() => navigate('left'));
+    const keyRight = guard(() => navigate('right'));
+    const keyUp = guard(() => navigate('up'));
+    const keyDown = guard(() => navigate('down'));
+    const keyConfirm = guard(() => {
+      if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
+    });
 
     const kb = this.input.keyboard;
     kb?.on('keydown-LEFT', keyLeft);
@@ -1516,24 +1523,31 @@ export class CombatScene extends Phaser.Scene {
     updateSelection();
 
     // Grid nav: LEFT/RIGHT wrap along linear index; UP/DOWN move by cols (clamp).
+    // All handlers no-op while the pause menu is open so its own
+    // keyboard handlers own UP/DOWN/ENTER/SPACE/E.
     const n = targets.length;
     const onLeft = () => {
+      if (this.pauseMenuOpen) return;
       selectedIdx = (selectedIdx - 1 + n) % n;
       updateSelection();
     };
     const onRight = () => {
+      if (this.pauseMenuOpen) return;
       selectedIdx = (selectedIdx + 1) % n;
       updateSelection();
     };
     const onUp = () => {
+      if (this.pauseMenuOpen) return;
       selectedIdx = Math.max(0, selectedIdx - cols);
       updateSelection();
     };
     const onDown = () => {
+      if (this.pauseMenuOpen) return;
       selectedIdx = Math.min(n - 1, selectedIdx + cols);
       updateSelection();
     };
     const onEnter = () => {
+      if (this.pauseMenuOpen) return;
       const t = targets[selectedIdx];
       if (t) onSelect(t);
     };
@@ -1708,33 +1722,117 @@ export class CombatScene extends Phaser.Scene {
       this.actionMenuContainer!.add([bg, txt, chevron]);
     });
 
-    // Keyboard navigation (matches showActionMenu pattern).
+    // BACK sits as a virtual extra cell at index N (ITEM_ORDER.length).
+    // Navigation treats it as row 2, col 1 (right column below the
+    // item grid) so DOWN from the second row reaches it and UP takes
+    // you back into the items.
+    const BACK_IDX = ITEM_ORDER.length;
+    const backY = startY + 2 * (btnHeight + btnGap) + btnHeight / 2;
+    const BACK_FILL = 0x2a1a1a;
+    const BACK_HOVER_FILL = 0x4a2a2a;
+    const backBg = this.add
+      .rectangle(startX + btnWidth + 10 + btnWidth / 2, backY, btnWidth, btnHeight, BACK_FILL, 0.9)
+      .setStrokeStyle(2, 0x88aaaa)
+      .setInteractive({ useHandCursor: true });
+    const backTxt = this.add
+      .text(startX + btnWidth + 10 + btnWidth / 2, backY, '< BACK', {
+        fontFamily: FONT,
+        fontSize: '16px',
+        color: '#88aaaa',
+      })
+      .setOrigin(0.5);
+    const backChevron = this.add
+      .text(startX + btnWidth + 10 + btnWidth / 2 - btnWidth / 2 + 6, backY, '►', {
+        fontFamily: FONT,
+        fontSize: '16px',
+        color: '#88aaaa',
+      })
+      .setOrigin(0, 0.5)
+      .setVisible(false);
+    const backGoBack = (): void => {
+      playSfx(this, 'sfx-menu-cancel', 0.5);
+      this.itemMenuOpen = false;
+      this.showActionMenu(attacker);
+    };
+    backBg.once('pointerup', backGoBack);
+    this.actionMenuContainer.add([backBg, backTxt, backChevron]);
+
+    // Highlight helpers that understand the virtual BACK cell.
+    const highlightBack = (): void => {
+      chevrons.forEach((c) => c.setVisible(false));
+      bgs.forEach((b) => b.el.setFillStyle(b.baseFill, 0.9));
+      descText.setText('');
+      descText.setVisible(false);
+      backBg.setFillStyle(BACK_HOVER_FILL, 0.9);
+      backChevron.setVisible(true);
+    };
+    const unhighlightBack = (): void => {
+      backBg.setFillStyle(BACK_FILL, 0.9);
+      backChevron.setVisible(false);
+    };
+    backBg.on('pointerover', highlightBack);
+    backBg.on('pointerout', unhighlightBack);
+
+    // Keyboard navigation (matches showActionMenu pattern). BACK is
+    // integrated as a virtual extra cell so arrows + Enter reach it.
     let selectedIdx = 0;
     const firstUsable = canUseFlags.findIndex((c) => c);
     if (firstUsable >= 0) selectedIdx = firstUsable;
-    selectFns[selectedIdx]?.();
+    const applySelection = (idx: number): void => {
+      if (idx === BACK_IDX) {
+        highlightBack();
+      } else {
+        unhighlightBack();
+        selectFns[idx]?.();
+      }
+    };
+    applySelection(selectedIdx);
 
     const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
       const n: number = ITEM_ORDER.length;
       if (n === 0) return;
       let next = selectedIdx;
-      if (delta === 'left') next = (selectedIdx - 1 + n) % n;
-      else if (delta === 'right') next = (selectedIdx + 1) % n;
-      else if (delta === 'up') next = Math.max(0, selectedIdx - cols);
-      else if (delta === 'down') next = Math.min(n - 1, selectedIdx + cols);
+      if (selectedIdx === BACK_IDX) {
+        // From BACK: UP returns to the bottom-right of the grid;
+        // LEFT/RIGHT cycle between BACK and the bottom-left item;
+        // DOWN stays on BACK (nothing below).
+        if (delta === 'up') next = n - 1;
+        else if (delta === 'left')
+          next = n - 2; // bottom-left item
+        else if (delta === 'right') next = n - 2;
+        else next = BACK_IDX;
+      } else {
+        if (delta === 'left') next = (selectedIdx - 1 + n) % n;
+        else if (delta === 'right') next = (selectedIdx + 1) % n;
+        else if (delta === 'up') next = Math.max(0, selectedIdx - cols);
+        else if (delta === 'down') {
+          // Bottom row → BACK. Other rows → straight down in grid.
+          const inBottomRow = selectedIdx >= n - cols;
+          next = inBottomRow ? BACK_IDX : Math.min(n - 1, selectedIdx + cols);
+        }
+      }
       if (next !== selectedIdx) {
         selectedIdx = next;
-        selectFns[selectedIdx]?.();
+        applySelection(selectedIdx);
       }
     };
 
-    const keyLeft = () => navigate('left');
-    const keyRight = () => navigate('right');
-    const keyUp = () => navigate('up');
-    const keyDown = () => navigate('down');
-    const keyConfirm = () => {
-      if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
+    // All item-menu handlers no-op while the pause menu owns input.
+    const guard = (fn: () => void) => (): void => {
+      if (this.pauseMenuOpen) return;
+      fn();
     };
+    const keyLeft = guard(() => navigate('left'));
+    const keyRight = guard(() => navigate('right'));
+    const keyUp = guard(() => navigate('up'));
+    const keyDown = guard(() => navigate('down'));
+    const keyConfirm = guard(() => {
+      if (selectedIdx === BACK_IDX) {
+        backGoBack();
+        return;
+      }
+      if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
+    });
 
     const kb = this.input.keyboard;
     kb?.on('keydown-LEFT', keyLeft);
@@ -1762,25 +1860,6 @@ export class CombatScene extends Phaser.Scene {
       kb?.off('keydown-SPACE', keyConfirm);
       kb?.off('keydown-E', keyConfirm);
     });
-
-    const backY = startY + 2 * (btnHeight + btnGap) + btnHeight / 2;
-    const backBg = this.add
-      .rectangle(startX + btnWidth + 10 + btnWidth / 2, backY, btnWidth, btnHeight, 0x2a1a1a, 0.9)
-      .setStrokeStyle(2, 0x88aaaa)
-      .setInteractive({ useHandCursor: true });
-    const backTxt = this.add
-      .text(startX + btnWidth + 10 + btnWidth / 2, backY, '< BACK', {
-        fontFamily: FONT,
-        fontSize: '16px',
-        color: '#88aaaa',
-      })
-      .setOrigin(0.5);
-    backBg.once('pointerup', () => {
-      playSfx(this, 'sfx-menu-cancel', 0.5);
-      this.itemMenuOpen = false;
-      this.showActionMenu(attacker);
-    });
-    this.actionMenuContainer.add([backBg, backTxt]);
   }
 
   private chooseItemTarget(attacker: Unit, item: ItemDef): void {
@@ -2126,7 +2205,30 @@ export class CombatScene extends Phaser.Scene {
       }
       case 'taunt': {
         playSfx(this, ability.sfxKey ?? 'sfx-status-apply', ability.sfxKey ? 1 : 0.5);
-        this.playCastTween(attacker);
+        // Dedicated taunt cast: scale-punch + orange tint + forward lean,
+        // bigger than the generic playCastTween so the "come at me" beat
+        // reads clearly. Orange tint matches the TAUNT float color.
+        if (attacker.sprite) {
+          const baseScale = attacker.scale;
+          const baseX = attacker.posX;
+          const facingEast = attacker.side === 'party';
+          const leanDir = facingEast ? 1 : -1;
+          attacker.sprite.setTint(0xffbb88);
+          this.tweens.add({
+            targets: attacker.sprite,
+            scaleX: baseScale * 1.15,
+            scaleY: baseScale * 1.15,
+            x: baseX + 4 * leanDir,
+            duration: 180,
+            yoyo: true,
+            ease: 'Sine.easeInOut',
+            onComplete: () => {
+              attacker.sprite?.clearTint();
+              attacker.sprite?.setScale(baseScale);
+              if (attacker.sprite) attacker.sprite.x = baseX;
+            },
+          });
+        }
         target.tauntedBy = attacker.id;
         this.updateStatusIcon(target);
         spawnFloatNumber(this, target, 'TAUNT', '#ff9955');
@@ -2380,13 +2482,16 @@ export class CombatScene extends Phaser.Scene {
     if (shock && sig) {
       const phase = (enemy.turnCount - 1) % 3;
       if (phase === 1) {
+        // TAUNT is a one-turn hold — if the boss is on a phase that
+        // doesn't redirect (Shockwave / AoE), the taunt is spent on that
+        // phase rather than carrying to the next normal attack.
+        enemy.tauntedBy = null;
         this.playShockwaveAttack(enemy, shock);
-        // Taunt persists across non-single-target phases; refresh the `!`
-        // icon so the tauntWillApply prediction reflects the new turnCount.
         this.updateStatusIcon(enemy);
         return;
       }
       if (phase === 2) {
+        enemy.tauntedBy = null;
         this.playSignatureAoE(enemy, sig);
         this.updateStatusIcon(enemy);
         return;
@@ -2395,12 +2500,12 @@ export class CombatScene extends Phaser.Scene {
     } else if (sig) {
       if (enemy.signatureNext) {
         enemy.signatureNext = false;
+        enemy.tauntedBy = null;
         this.playSignatureAoE(enemy, sig);
         this.updateStatusIcon(enemy);
         return;
       }
       enemy.signatureNext = true;
-      // signatureNext flipped — next turn will be AoE, taunt won't redirect.
       this.updateStatusIcon(enemy);
     }
 
@@ -3721,47 +3826,169 @@ export class CombatScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive();
 
-    const resumeBtn = this.add
-      .text(width / 2, height / 2 - 70, '[ RESUME ]', {
-        fontFamily: FONT,
-        fontSize: '28px',
-        color: '#8aff8a',
-        backgroundColor: '#2a3a2a',
-        padding: { x: 24, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    resumeBtn.on('pointerup', () => this.closePauseMenu());
+    // Per-button color pairs. Each button keeps its own idle/hover
+    // palette so they stay visually distinct when focus / hover is on
+    // them (e.g. the quit button stays red-toned, audio stays blue).
+    interface PauseBtn {
+      text: Phaser.GameObjects.Text;
+      activate: () => void;
+      idleColor: string;
+      hoverColor: string;
+      idleBg: string;
+      hoverBg: string;
+    }
 
-    const audioBtn = this.add
-      .text(width / 2, height / 2, '[ AUDIO SETTINGS ]', {
-        fontFamily: FONT,
-        fontSize: '22px',
-        color: '#8acfff',
-        backgroundColor: '#2a3440',
-        padding: { x: 20, y: 8 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    audioBtn.on('pointerup', () => this.buildPauseMenuAudio());
+    const mkBtn = (
+      y: number,
+      label: string,
+      fontSize: string,
+      palette: Omit<PauseBtn, 'text' | 'activate'>,
+      padding: { x: number; y: number },
+      activate: () => void,
+    ): PauseBtn => {
+      const t = this.add
+        .text(width / 2, y, label, {
+          fontFamily: FONT,
+          fontSize,
+          color: palette.idleColor,
+          backgroundColor: palette.idleBg,
+          padding,
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+      t.on('pointerup', activate);
+      return { text: t, activate, ...palette };
+    };
 
-    const quitBtn = this.add
-      .text(width / 2, height / 2 + 70, '[ ABANDON RUN ]', {
-        fontFamily: FONT,
-        fontSize: '22px',
-        color: '#ff8a8a',
-        backgroundColor: '#3a2a2a',
-        padding: { x: 20, y: 8 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    quitBtn.on('pointerup', () => {
-      this.closePauseMenu();
-      this.abortRun();
+    const resume = mkBtn(
+      height / 2 - 70,
+      '[ RESUME ]',
+      '28px',
+      {
+        idleColor: '#8aff8a',
+        hoverColor: '#ffffff',
+        idleBg: '#2a3a2a',
+        hoverBg: '#3f5a3f',
+      },
+      { x: 24, y: 10 },
+      () => this.closePauseMenu(),
+    );
+    const audio = mkBtn(
+      height / 2,
+      '[ AUDIO SETTINGS ]',
+      '22px',
+      {
+        idleColor: '#8acfff',
+        hoverColor: '#ffffff',
+        idleBg: '#2a3440',
+        hoverBg: '#3f4a5a',
+      },
+      { x: 20, y: 8 },
+      () => this.buildPauseMenuAudio(),
+    );
+    const quit = mkBtn(
+      height / 2 + 70,
+      '[ ABANDON RUN ]',
+      '22px',
+      {
+        idleColor: '#ff8a8a',
+        hoverColor: '#ffffff',
+        idleBg: '#3a2a2a',
+        hoverBg: '#5a3f3f',
+      },
+      { x: 20, y: 8 },
+      () => {
+        this.closePauseMenu();
+        this.abortRun();
+      },
+    );
+
+    const buttons: PauseBtn[] = [resume, audio, quit];
+    container.add([bg, resume.text, audio.text, quit.text]);
+    this.pauseMenuContainer = container;
+
+    // Focus border + hover/keyboard selection state. -1 = nothing
+    // focused (scene just mounted, no user input yet). Flips to a
+    // real index only on hover-enter or cycle-key press. Hover-out
+    // clears focus so the border doesn't linger once the mouse
+    // leaves. Matches the RunCompleteScene pattern.
+    let focusedIdx = -1;
+    const focusBorder = this.add.graphics().setDepth(200001);
+    container.add(focusBorder);
+    const setButtonChrome = (b: PauseBtn, hovered: boolean): void => {
+      b.text.setColor(hovered ? b.hoverColor : b.idleColor);
+      b.text.setBackgroundColor(hovered ? b.hoverBg : b.idleBg);
+    };
+    const redrawFocus = (): void => {
+      focusBorder.clear();
+      buttons.forEach((b, i) => setButtonChrome(b, i === focusedIdx));
+      if (focusedIdx < 0) return;
+      const f = buttons[focusedIdx];
+      if (!f) return;
+      const b = f.text.getBounds();
+      const pad = 6;
+      focusBorder.lineStyle(3, 0xffffff, 0.9);
+      focusBorder.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
+    };
+    redrawFocus();
+
+    buttons.forEach((b, i) => {
+      b.text.on('pointerover', () => {
+        focusedIdx = i;
+        redrawFocus();
+      });
+      b.text.on('pointerout', () => {
+        if (focusedIdx === i) {
+          focusedIdx = -1;
+          redrawFocus();
+        }
+      });
     });
 
-    container.add([bg, resumeBtn, audioBtn, quitBtn]);
-    this.pauseMenuContainer = container;
+    const moveFocus = (delta: number): void => {
+      const n = buttons.length;
+      if (n === 0) return;
+      // First cycle-key with no focus → RESUME (the primary dismiss
+      // action). Delta isn't applied on that first press; the player
+      // has to press again to cycle.
+      if (focusedIdx < 0) {
+        focusedIdx = 0;
+      } else {
+        focusedIdx = (focusedIdx + delta + n) % n;
+      }
+      redrawFocus();
+    };
+    const activate = (): void => {
+      // No focus yet → Enter/Space/E falls back to RESUME, preserving
+      // "one-key dismiss the modal" behavior.
+      if (focusedIdx < 0) {
+        buttons[0]?.activate();
+        return;
+      }
+      buttons[focusedIdx]?.activate();
+    };
+
+    const kb = this.input.keyboard;
+    const onUp = (): void => moveFocus(-1);
+    const onDown = (): void => moveFocus(1);
+    const onActivate = (): void => activate();
+    kb?.on('keydown-UP', onUp);
+    kb?.on('keydown-W', onUp);
+    kb?.on('keydown-DOWN', onDown);
+    kb?.on('keydown-S', onDown);
+    kb?.on('keydown-ENTER', onActivate);
+    kb?.on('keydown-SPACE', onActivate);
+    kb?.on('keydown-E', onActivate);
+
+    container.once('destroy', () => {
+      kb?.off('keydown-UP', onUp);
+      kb?.off('keydown-W', onUp);
+      kb?.off('keydown-DOWN', onDown);
+      kb?.off('keydown-S', onDown);
+      kb?.off('keydown-ENTER', onActivate);
+      kb?.off('keydown-SPACE', onActivate);
+      kb?.off('keydown-E', onActivate);
+    });
   }
 
   private buildPauseMenuAudio(): void {

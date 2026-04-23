@@ -201,14 +201,14 @@ export class JourneyScene extends Phaser.Scene {
     this.add
       .text(pathStartX, pathY + 40, 'GREENHOUSE', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: '20px',
         color: '#8aa5cf',
       })
       .setOrigin(0.5, 0);
     this.add
       .text(pathEndX, pathY + 40, 'THE RELAY', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: '20px',
         color: '#f5c97b',
       })
       .setOrigin(0.5, 0);
@@ -249,12 +249,12 @@ export class JourneyScene extends Phaser.Scene {
         });
       }
 
-      // Small encounter number below the node
+      // Encounter number below the node
       this.add
-        .text(pos.x, pos.y + 18, `${i + 1}`, {
+        .text(pos.x, pos.y + 20, `${i + 1}`, {
           fontFamily: FONT,
-          fontSize: '11px',
-          color: isCurrent ? '#8aff8a' : '#666',
+          fontSize: '18px',
+          color: isCurrent ? '#8aff8a' : '#888',
         })
         .setOrigin(0.5, 0);
     });
@@ -270,13 +270,9 @@ export class JourneyScene extends Phaser.Scene {
         this.add.circle(pos.x, pos.y, 7, 0x8a6a3a, 1).setStrokeStyle(2, 0x5a4a2a, 1);
       }
       this.add
-        .image(pos.x, pos.y - ENDPOINT_ICON_Y_OFFSET, 'icon-rest-tent')
-        .setOrigin(0.5, 1)
-        .setScale(ENDPOINT_ICON_SCALE);
-      this.add
-        .text(pos.x, pos.y + 16, 'REST', {
+        .text(pos.x, pos.y + 18, 'REST', {
           fontFamily: FONT,
-          fontSize: '10px',
+          fontSize: '18px',
           color: '#f5c97b',
         })
         .setOrigin(0.5, 0);
