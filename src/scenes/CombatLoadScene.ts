@@ -306,7 +306,6 @@ export class CombatLoadScene extends Phaser.Scene {
     }
 
     // --- UI icons (combat-side) ---
-    this.load.image('icon-rest-tent', 'assets/ui/icon-rest-tent.png');
 
     // --- Combat SFX ---
     this.load.audio('sfx-attack-melee', 'assets/audio/sfx/attack-melee.mp3');

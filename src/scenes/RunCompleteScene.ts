@@ -10,8 +10,16 @@ import { resetLobbyForNextRun } from '../state/lobby';
 import {
   submitScore,
   ROUTE_BONUS_BY_DIFFICULTY,
+  getApiUrl,
   type LeaderboardRoute,
 } from '../state/leaderboard';
+
+// Debug flag — when set, surfaces a [ TEST SUBMIT (PROD) ] button on the
+// victory screen and appends the submit source (remote/local) to the
+// "Submitted!" modal. Use to diagnose cases where a run appears to submit
+// but the entry never shows up on the remote leaderboard.
+const DEBUG_LEADERBOARD_PROD =
+  (import.meta.env.VITE_DEBUG_LEADERBOARD_PROD as string | undefined) === 'true';
 import { getUsername } from '../state/player';
 import { openUsernamePrompt, isUsernamePromptOpen } from '../util/usernamePrompt';
 import { createHoverButton, GOLD_BUTTON_STYLE } from '../util/button';
@@ -194,13 +202,28 @@ export class RunCompleteScene extends Phaser.Scene {
                 rankText!.setVisible(true);
                 rankText!.setText('RANK  —');
                 rankText!.setColor('#8aa5cf');
-                void this.submitLeaderboardEntry(finalScore, rankText!);
+                void this.submitLeaderboardEntry(finalScore, rankText!, true);
               },
               onCancel: () => {
                 // No-op — button stays for a retry.
               },
             });
           },
+        });
+      }
+
+      if (DEBUG_LEADERBOARD_PROD) {
+        createHoverButton(this, {
+          x: width / 2,
+          y: ROW_Y + 44,
+          label: '[ TEST SUBMIT (PROD) ]',
+          fontSize: '18px',
+          idleBg: '#402020',
+          hoverBg: '#6a3030',
+          idleColor: '#ffaaaa',
+          hoverColor: '#ffffff',
+          padding: { x: 14, y: 6 },
+          onClick: () => void this.runDebugProdSubmit(finalScore),
         });
       }
     }
@@ -356,17 +379,43 @@ export class RunCompleteScene extends Phaser.Scene {
         }
       });
     });
+    // Focus-cycle shortcuts are suppressed while the callsign input modal
+    // is open — otherwise typing letters like A/D/E/SPACE or pressing
+    // TAB/ENTER would both enter characters AND move focus on the victory
+    // screen underneath.
     this.input.keyboard?.on('keydown-TAB', (ev: KeyboardEvent) => {
+      if (isUsernamePromptOpen()) return;
       ev.preventDefault?.();
       moveFocus(ev.shiftKey ? -1 : 1);
     });
-    this.input.keyboard?.on('keydown-LEFT', () => moveFocus(-1));
-    this.input.keyboard?.on('keydown-RIGHT', () => moveFocus(1));
-    this.input.keyboard?.on('keydown-A', () => moveFocus(-1));
-    this.input.keyboard?.on('keydown-D', () => moveFocus(1));
-    this.input.keyboard?.on('keydown-ENTER', activateFocused);
-    this.input.keyboard?.on('keydown-SPACE', activateFocused);
-    this.input.keyboard?.on('keydown-E', activateFocused);
+    this.input.keyboard?.on('keydown-LEFT', () => {
+      if (isUsernamePromptOpen()) return;
+      moveFocus(-1);
+    });
+    this.input.keyboard?.on('keydown-RIGHT', () => {
+      if (isUsernamePromptOpen()) return;
+      moveFocus(1);
+    });
+    this.input.keyboard?.on('keydown-A', () => {
+      if (isUsernamePromptOpen()) return;
+      moveFocus(-1);
+    });
+    this.input.keyboard?.on('keydown-D', () => {
+      if (isUsernamePromptOpen()) return;
+      moveFocus(1);
+    });
+    this.input.keyboard?.on('keydown-ENTER', () => {
+      if (isUsernamePromptOpen()) return;
+      activateFocused();
+    });
+    this.input.keyboard?.on('keydown-SPACE', () => {
+      if (isUsernamePromptOpen()) return;
+      activateFocused();
+    });
+    this.input.keyboard?.on('keydown-E', () => {
+      if (isUsernamePromptOpen()) return;
+      activateFocused();
+    });
 
     installPauseMenuEsc(this, {
       canAbandon: false,
@@ -382,6 +431,7 @@ export class RunCompleteScene extends Phaser.Scene {
   private async submitLeaderboardEntry(
     score: number,
     rankText: Phaser.GameObjects.Text,
+    showToast = false,
   ): Promise<void> {
     const run = getRun();
     const username = getUsername();
@@ -408,10 +458,134 @@ export class RunCompleteScene extends Phaser.Scene {
       const suffix = result.source === 'local' ? ' (local)' : '';
       rankText.setText(`RANK  #${result.rank}${suffix}`);
       rankText.setColor(result.source === 'local' ? '#ffbb66' : '#8aff8a');
+      if (showToast) this.showSubmittedModal(result.source, result.rank, result.error);
     } else {
       rankText.setText('RANK  —');
       rankText.setColor('#888');
+      if (showToast) this.showSubmittedModal(result.source, null, result.error);
     }
+  }
+
+  private async runDebugProdSubmit(finalScore: number): Promise<void> {
+    const run = getRun();
+    const username = getUsername() ?? `debug_${Math.random().toString(36).slice(2, 8)}`;
+    const durationSec = Math.max(0, Math.floor((Date.now() - run.startedAt) / 1000));
+    const result = await submitScore({
+      username,
+      score: finalScore,
+      leaderId: run.leaderId,
+      route: run.route.id as LeaderboardRoute,
+      durationSec,
+    });
+    this.showSubmittedModal(result.source, result.rank, result.error, {
+      isDebug: true,
+      username,
+    });
+  }
+
+  private showSubmittedModal(
+    source?: 'remote' | 'local',
+    rank?: number | null,
+    error?: string,
+    debug?: { isDebug: boolean; username: string },
+  ): void {
+    const { width, height } = this.scale;
+    const container = this.add.container(0, 0).setDepth(200000).setScrollFactor(0);
+
+    const backdrop = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x000000, 0.6)
+      .setInteractive();
+    container.add(backdrop);
+
+    const isOk = source === 'remote';
+    const isDebug = DEBUG_LEADERBOARD_PROD || debug?.isDebug;
+    const strokeColor = isDebug ? (isOk ? 0x55ff88 : 0xffbb66) : 0x55ff88;
+    const panelW = isDebug ? 560 : 420;
+    const panelH = isDebug ? 300 : 200;
+    const panel = this.add
+      .rectangle(width / 2, height / 2, panelW, panelH, 0x051410, 0.98)
+      .setStrokeStyle(3, strokeColor, 1)
+      .setInteractive();
+    container.add(panel);
+
+    const title = debug?.isDebug ? 'DEBUG SUBMIT' : 'SUBMITTED!';
+    const titleColor = isDebug ? (isOk ? '#8aff8a' : '#ffbb66') : '#8aff8a';
+    container.add(
+      this.add
+        .text(width / 2, height / 2 - panelH / 2 + 40, title, {
+          fontFamily: FONT,
+          fontSize: '36px',
+          color: titleColor,
+        })
+        .setOrigin(0.5),
+    );
+
+    // Non-debug: show the rank from the response so the player sees
+    // where they landed without needing to open the Leaderboard scene.
+    // Falls back to a neutral line if the submit resolved without a rank.
+    if (!isDebug) {
+      const rankLine =
+        rank != null ? `RANK  #${rank}${source === 'local' ? ' (local)' : ''}` : 'Saved locally';
+      container.add(
+        this.add
+          .text(width / 2, height / 2, rankLine, {
+            fontFamily: FONT,
+            fontSize: '26px',
+            color: source === 'local' ? '#ffbb66' : '#8aff8a',
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    // Diagnostic body: source + rank (+ error). Always shown when the
+    // debug env is enabled so the player can tell at a glance whether
+    // the Worker actually accepted the write.
+    if (DEBUG_LEADERBOARD_PROD || debug?.isDebug) {
+      const api = getApiUrl();
+      const lines: string[] = [];
+      lines.push(`api: ${api || '(unset — build-time env missing)'}`);
+      lines.push(`source: ${source ?? '—'}`);
+      lines.push(`rank: ${rank ?? '—'}`);
+      if (debug?.username) lines.push(`callsign: ${debug.username}`);
+      if (error) lines.push(`error: ${error}`);
+      container.add(
+        this.add
+          .text(width / 2, height / 2 - 10, lines.join('\n'), {
+            fontFamily: FONT,
+            fontSize: '14px',
+            color: '#cfe8e8',
+            align: 'center',
+            wordWrap: { width: panelW - 40 },
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const okBtn = createHoverButton(this, {
+      x: width / 2,
+      y: height / 2 + panelH / 2 - 40,
+      label: '[ OK ]',
+      fontSize: '22px',
+      idleBg: '#1a4a2a',
+      hoverBg: '#2f6a3f',
+      padding: { x: 28, y: 10 },
+      onClick: () => close(),
+    });
+    container.add(okBtn);
+
+    let closed = false;
+    const close = (): void => {
+      if (closed) return;
+      closed = true;
+      window.removeEventListener('keydown', keyHandler);
+      container.destroy();
+    };
+    const keyHandler = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', keyHandler);
+    backdrop.on('pointerup', () => close());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => close());
   }
 
   private returnToTitle(): void {

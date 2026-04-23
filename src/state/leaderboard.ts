@@ -122,13 +122,23 @@ async function submitRemote(
         durationSec: entry.durationSec,
       }),
     });
-    if (!res.ok) return { error: `http_${res.status}` };
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      return { error: `http_${res.status}:${text.slice(0, 160)}` };
+    }
     const data: RemoteSubmitResponse = await res.json();
     if (!data.ok) return { error: data.error ?? 'server' };
     return { rank: data.rank ?? null };
   } catch (err) {
     return { error: `network:${String(err)}` };
   }
+}
+
+// Exposed so the victory-screen diagnostic modal can show the effective
+// Worker URL baked into the build. Lets you confirm from inside the game
+// whether VITE_LEADERBOARD_API actually reached production.
+export function getApiUrl(): string {
+  return API_URL;
 }
 
 async function fetchRemote(

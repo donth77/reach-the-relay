@@ -960,10 +960,41 @@ export class CombatScene extends Phaser.Scene {
       .setStrokeStyle(1, 0x3a5a6a, 0.8);
 
     // Position container above the enemy sprite, centered on its x.
+    // If the above-sprite placement would clip offscreen at the top
+    // (encounter title + action text eat the top on touch; small sprites
+    // near the top do it on desktop), flop the tooltip to the right side
+    // of the sprite (or the left if there's no room on the right).
     const sprite = u.sprite;
     const spriteTop = sprite.y - sprite.displayHeight / 2;
-    const tooltipX = sprite.x - contentWidth / 2;
-    const tooltipY = spriteTop - contentHeight - 12;
+    const spriteBottom = sprite.y + sprite.displayHeight / 2;
+    // Sprite canvases include transparent padding around the art (Wreckwarden's
+    // 136px canvas only fills ~80px wide). Approximate the visible edge as 35%
+    // of displayWidth from origin so the side-flop tooltip sits near the art,
+    // not the empty canvas edge.
+    const VISIBLE_HALF = sprite.displayWidth * 0.35;
+    const spriteRight = sprite.x + VISIBLE_HALF;
+    const spriteLeft = sprite.x - VISIBLE_HALF;
+    const sceneW = this.scale.width;
+    const TOP_SAFE = touch ? 110 : 8;
+    const SIDE_MARGIN = 8;
+    let tooltipX = sprite.x - contentWidth / 2;
+    let tooltipY = spriteTop - contentHeight - 12;
+    if (tooltipY < TOP_SAFE) {
+      const rightX = spriteRight;
+      const leftX = spriteLeft - contentWidth;
+      if (rightX + contentWidth + SIDE_MARGIN <= sceneW) {
+        tooltipX = rightX;
+      } else if (leftX >= SIDE_MARGIN) {
+        tooltipX = leftX;
+      } else {
+        tooltipX = Math.max(SIDE_MARGIN, sceneW - contentWidth - SIDE_MARGIN);
+      }
+      tooltipY = Math.max(
+        TOP_SAFE,
+        Math.min(sprite.y - contentHeight / 2, spriteBottom - contentHeight),
+      );
+    }
+    tooltipX = Math.max(SIDE_MARGIN, Math.min(tooltipX, sceneW - contentWidth - SIDE_MARGIN));
     const container = this.add.container(tooltipX, tooltipY, [
       bg,
       headerTxt,
@@ -971,7 +1002,9 @@ export class CombatScene extends Phaser.Scene {
       statusTxt,
       descTxt,
     ]);
-    container.setDepth(150000);
+    // Above the action text (messageText, depth 200000) and encounter title
+    // so the hover inspector never hides behind the top-of-screen HUD.
+    container.setDepth(200100);
 
     this.enemyTooltip = container;
     this.enemyTooltipFor = u;
@@ -3893,6 +3926,7 @@ export class CombatScene extends Phaser.Scene {
     this.pauseMenuOpen = true;
     this.savedWaitModeForPause = this.waitMode;
     this.waitMode = true;
+    this.hideEnemyTooltip();
     this.buildPauseMenuMain();
   }
 
