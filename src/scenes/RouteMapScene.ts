@@ -196,16 +196,20 @@ export class RouteMapScene extends Phaser.Scene {
     // the title + cycler row below don't reach into the substation
     // overlay's horizontal band (substation bottom-right ≈ x=747 on
     // the 1280px viewport).
+    // Mobile uses a bigger title + bottom-left cycler; desktop keeps the
+    // compact top-left cluster so the row stays clear of the substation
+    // overlay band on the right side of the map.
+    const touchLayout = isTouchDevice();
     const titleText = this.add
-      .text(24, 32, 'CHOOSE YOUR ROUTE', {
+      .text(24, touchLayout ? 40 : 32, 'CHOOSE YOUR ROUTE', {
         fontFamily: FONT,
-        fontSize: '20px',
+        fontSize: touchLayout ? '28px' : '20px',
         color: '#ffffff',
         backgroundColor: '#05141099',
         // Padding on each side drives both the title pill width AND
         // the cycler label width below (which is derived from
         // titleText.width). +3 px per side ≈ +5 px wider pair.
-        padding: { x: 22, y: 6 },
+        padding: touchLayout ? { x: 19, y: 8 } : { x: 22, y: 6 },
       })
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
@@ -586,13 +590,13 @@ export class RouteMapScene extends Phaser.Scene {
     const briefingBtn = this.add
       .text(24, height - 70, isTouchDevice() ? '[TAP] MISSION BRIEFING' : '[B] MISSION BRIEFING', {
         fontFamily: FONT,
-        fontSize: '15px',
+        fontSize: isTouchDevice() ? '17px' : '15px',
         color: '#8affaa',
         // Bracket-framed label + bordered pill on touch so the label
         // reads clearly as a tap target without a keyboard-shortcut
         // prefix. Matches the [ CONFIRM ] button chrome above.
         backgroundColor: isTouchDevice() ? '#0a2a1a' : '#05141099',
-        padding: isTouchDevice() ? { x: 14, y: 8 } : { x: 10, y: 5 },
+        padding: isTouchDevice() ? { x: 14, y: 9 } : { x: 10, y: 5 },
       })
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
@@ -615,7 +619,7 @@ export class RouteMapScene extends Phaser.Scene {
       // because the chrome (bright green pill, thick padding, larger
       // font) is unambiguously a button on its own.
       const confirmBtn = this.add
-        .text(24, height - 140, 'START ROUTE', {
+        .text(24, height - 200, 'START ROUTE', {
           fontFamily: FONT,
           fontSize: '32px',
           color: '#062010',
@@ -638,19 +642,20 @@ export class RouteMapScene extends Phaser.Scene {
       });
     }
 
-    // Selection cycle UI — [◀]  ROUTE NAME  [▶] — stacked directly
-    // below the "CHOOSE YOUR ROUTE" title. Provides a touch-friendly
-    // cycler for mobile (where hover doesn't fire), a visible hint
-    // that routes are cyclable, and redundancy for keyboard nav.
-    const cyclerY = 70;
-    const arrowFontSize = 16;
-    const labelFontSize = 13;
+    // Selection cycle UI — [◀]  ROUTE NAME  [▶]. Mobile places it in
+    // the bottom-left, stacked above the MISSION BRIEFING button (big
+    // enough to be comfortable tap targets). Desktop keeps it tight
+    // under the title in the top-left so it doesn't bleed into the
+    // substation overlay band further right.
+    const cyclerY = touchLayout ? height - 120 : 70;
+    const arrowFontSize = touchLayout ? 24 : 16;
+    const labelFontSize = touchLayout ? 18 : 13;
     // Square arrow buttons — fixed width+height equal to the label's
     // height so the glyph sits centered (horizontally via align:center,
     // vertically via the matching fixed height). Non-square buttons
     // made the ◀ / ▶ glyphs read as off-center because their native
     // advance widths are smaller than their visual bounding box.
-    const arrowBoxSize = 26;
+    const arrowBoxSize = touchLayout ? 38 : 26;
     const cycle = (delta: number): void => {
       hoverArmed = true;
       const n = allOverlays.length;

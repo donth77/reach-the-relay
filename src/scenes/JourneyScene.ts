@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { getRun } from '../state/run';
-import { FONT } from '../util/ui';
+import { FONT, isTouchDevice } from '../util/ui';
 import { log } from '../util/logger';
 import { playMusicPool } from '../util/music';
 import { installPauseMenuEsc, isPauseMenuOpen } from '../util/pauseMenu';
@@ -74,9 +74,6 @@ export class JourneyScene extends Phaser.Scene {
 
     // Nearest-neighbor filter on the rest-tent icon so it stays crisp when
     // scaled (the endpoint icons are pre-filtered at load; this one isn't).
-    if (this.textures.exists('icon-rest-tent')) {
-      this.textures.get('icon-rest-tent').setFilter(Phaser.Textures.FilterMode.NEAREST);
-    }
 
     const run = getRun();
     const encounters = run.route.encounters;
@@ -399,9 +396,14 @@ export class JourneyScene extends Phaser.Scene {
     // --- Marker tween ------------------------------------------------------
     // After marker arrives we wait for the player to click/tap/press any key
     // to continue rather than auto-transitioning.
+    const touch = isTouchDevice();
     const continueLabel = isRunComplete
-      ? '[ Click or press any key to conclude ]'
-      : '[ Click or press any key to continue ]';
+      ? touch
+        ? '[ Tap to conclude ]'
+        : '[ Click or press any key to conclude ]'
+      : touch
+        ? '[ Tap to continue ]'
+        : '[ Click or press any key to continue ]';
     const continuePrompt = this.add
       .text(width / 2, height - 40, continueLabel, {
         fontFamily: FONT,
@@ -461,10 +463,17 @@ export class JourneyScene extends Phaser.Scene {
       }
       this.transitionToNext(justClearedIndex, isRestTransition);
     };
-    this.input.on('pointerdown', () => {
-      if (isPauseMenuOpen()) return;
-      onInput();
-    });
+    this.input.on(
+      'pointerdown',
+      (_pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        if (isPauseMenuOpen()) return;
+        // Skip when the tap hit an interactive game object (e.g. the
+        // mobile ☰ menu button) — otherwise tapping the menu both
+        // opens the pause menu and triggers the "continue" advance.
+        if (currentlyOver.length > 0) return;
+        onInput();
+      },
+    );
     this.input.keyboard?.on('keydown', onInput);
 
     installPauseMenuEsc(this);

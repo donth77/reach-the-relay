@@ -142,7 +142,7 @@ export const CLASSES: Record<string, ClassDef> = {
       {
         id: 'overload',
         label: 'OVERLOAD',
-        description: 'Thermal overload attack. Heavy damage to one enemy. 🔥',
+        description: 'Thermal overload attack.\nHeavy damage to one enemy. 🔥',
         mpCost: 5,
         target: 'enemy',
         effect: 'damage',

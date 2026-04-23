@@ -37,7 +37,7 @@ export class BootScene extends Phaser.Scene {
     // Title art (already <link rel="preload">'d from index.html).
     this.load.image('title-bg-on', 'assets/title/bg-on.png');
     this.load.image('title-bg-off', 'assets/title/bg-off.png');
-    this.load.image('title-logo', 'assets/logo/logo-surge.png');
+    this.load.image('title-logo', 'assets/logo/logo.png');
 
     // Title music + menu SFX.
     this.load.audio('music-main-theme', 'assets/audio/music/main-theme.mp3');

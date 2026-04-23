@@ -9,7 +9,7 @@ import { playMusicPool } from '../util/music';
 import { playSfx } from '../util/audio';
 import { buildAudioSettingsPanel } from '../util/audioSettingsPanel';
 import { drawFromBag } from '../util/bag';
-import { FONT } from '../util/ui';
+import { FONT, isTouchDevice } from '../util/ui';
 import {
   ATB_MAX,
   ATB_RATE,
@@ -145,10 +145,13 @@ export class CombatScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(200000);
 
-    // Mobile-only pause button (touch devices don't have ESC)
+    // Mobile-only pause button (touch devices don't have ESC). Hidden
+    // while the pause menu is open — otherwise tapping ✕ (same corner)
+    // would land on MENU and re-open the menu. Matches the shared pause
+    // button behavior used by RouteMap / Lobby / etc.
     const isTouchDevice = this.sys.game.device.input.touch;
     if (isTouchDevice) {
-      this.add
+      const menuBtn = this.add
         .text(width - 18, 18, 'MENU', {
           fontFamily: FONT,
           fontSize: '18px',
@@ -159,11 +162,20 @@ export class CombatScene extends Phaser.Scene {
         })
         .setOrigin(1, 0)
         .setDepth(150000)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerup', () => {
-          if (!this.pauseMenuOpen) this.openPauseMenu();
-          else this.closePauseMenu();
-        });
+        .setInteractive({ useHandCursor: true });
+      // pointerdown (not pointerup) so a tap that began on the pause
+      // menu's ✕ — which destroys the menu during the same gesture —
+      // can't have its pointerup land here and immediately re-open.
+      menuBtn.on('pointerdown', () => {
+        if (!this.pauseMenuOpen) this.openPauseMenu();
+      });
+      const refresh = (): void => {
+        menuBtn.setVisible(!this.pauseMenuOpen);
+      };
+      this.events.on(Phaser.Scenes.Events.UPDATE, refresh);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.events.off(Phaser.Scenes.Events.UPDATE, refresh);
+      });
     }
 
     this.input.keyboard?.on('keydown-ESC', () => this.handleEscapeKey());
@@ -891,30 +903,35 @@ export class CombatScene extends Phaser.Scene {
       statusLines.push(`! TAUNTED — forced to attack ${taunter?.name ?? 'taunter'}`);
     }
 
-    const TOOLTIP_MAX_WIDTH = 300;
-    const PADDING = 10;
+    // Touch devices get noticeably larger type + more padding so the tooltip
+    // stays readable at phone-screen sizes. Desktop retains the compact size.
+    const touch = isTouchDevice();
+    const TOOLTIP_MAX_WIDTH = touch ? 380 : 330;
+    const PADDING = touch ? 14 : 12;
+    const headerSize = touch ? '22px' : '18px';
+    const bodySize = touch ? '18px' : '15px';
 
     const headerTxt = this.add.text(0, 0, header, {
       fontFamily: FONT,
-      fontSize: '15px',
+      fontSize: headerSize,
       color: '#ffd488',
       stroke: '#000000',
       strokeThickness: 2,
     });
     const hpTxt = this.add.text(0, 0, hpLine, {
       fontFamily: FONT,
-      fontSize: '12px',
+      fontSize: bodySize,
       color: '#cfe8e8',
     });
     const statusTxt = this.add.text(0, 0, statusLines.join('\n'), {
       fontFamily: FONT,
-      fontSize: '12px',
+      fontSize: bodySize,
       color: '#ffd488',
       wordWrap: { width: TOOLTIP_MAX_WIDTH - PADDING * 2 },
     });
     const descTxt = this.add.text(0, 0, desc, {
       fontFamily: FONT,
-      fontSize: '12px',
+      fontSize: bodySize,
       color: '#a0bcbc',
       wordWrap: { width: TOOLTIP_MAX_WIDTH - PADDING * 2 },
     });
@@ -1180,7 +1197,6 @@ export class CombatScene extends Phaser.Scene {
     playSfx(this, 'sfx-atb-ready', 0.4);
     this.activeUnitId = u.id;
     for (const other of this.units) this.updatePanelRow(other);
-    this.showMessage(`${u.name}'s turn`);
     // Subtle ▼ marker above the active party member's head. Cleared when
     // the action commits (at the top of executeAbility). Also defensively
     // clear any lingering markers on OTHER party members — covers paths like
@@ -1205,6 +1221,11 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private showActionMenu(u: Unit): void {
+    // Reset the top action text every time the action menu opens — covers
+    // initial turn start AND deselect paths (ESC from target-select, BACK
+    // from items) so stale prompts like "surge → select an enemy" don't
+    // linger after cancellation.
+    this.showMessage(`${u.name} → select an action`);
     const { width } = this.scale;
     const leftWidth = width * 0.5;
     this.actionMenuContainer?.destroy();
@@ -1220,13 +1241,16 @@ export class CombatScene extends Phaser.Scene {
 
     // Description tooltip positioned just above the bottom panel so it never
     // overlaps the panel's "ACTION" header. Updates on hover.
+    // Touch devices get noticeably larger type + padding so the text reads
+    // comfortably at phone-screen sizes.
+    const descTouch = isTouchDevice();
     const descText = this.add
       .text(startX, PANEL_TOP - 12, '', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: descTouch ? '20px' : '16px',
         color: '#cfe8e8',
         backgroundColor: '#0a1820cc',
-        padding: { x: 8, y: 4 },
+        padding: { x: descTouch ? 12 : 10, y: descTouch ? 8 : 6 },
         wordWrap: { width: leftWidth - 60 },
       })
       .setOrigin(0, 1)
@@ -1242,6 +1266,10 @@ export class CombatScene extends Phaser.Scene {
     const selectFns: (() => void)[] = [];
     const commitFns: (() => void)[] = [];
     const canUseFlags: boolean[] = [];
+    // Hoisted so per-button pointerover handlers below can sync selectedIdx
+    // (keeps hover + keyboard in the same cell instead of snapping to 0).
+    let selectedIdx = 0;
+    let selectionActive = false;
 
     abilities.forEach((ability, i) => {
       const col = i % cols;
@@ -1302,15 +1330,20 @@ export class CombatScene extends Phaser.Scene {
         this.chooseTarget(u, ability);
       };
 
+      const onOver = () => {
+        selectedIdx = i;
+        selectionActive = true;
+        updateHover();
+      };
       if (canAfford) {
         bg.setInteractive({ useHandCursor: true });
-        bg.on('pointerover', updateHover);
+        bg.on('pointerover', onOver);
         bg.on('pointerout', clearHover);
         bg.once('pointerup', commit);
       } else {
         // Still allow hover to show description even if the ability can't be used.
         bg.setInteractive();
-        bg.on('pointerover', updateHover);
+        bg.on('pointerover', onOver);
         bg.on('pointerout', clearHover);
       }
 
@@ -1323,15 +1356,20 @@ export class CombatScene extends Phaser.Scene {
 
     // Keyboard navigation: arrows + WASD to move, Enter to confirm.
     // 2-col grid; UP/DOWN moves by cols (clamped), LEFT/RIGHT moves ±1 wrap.
-    let selectedIdx = 0;
-    // Start on the first affordable button if the first slot is disabled.
+    // No selection indicator is drawn until hover or the first keyboard
+    // input — showing a default chevron on touch devices (no hover events)
+    // reads as a confusing pre-selected state.
     const firstUsable = canUseFlags.findIndex((c) => c);
     if (firstUsable >= 0) selectedIdx = firstUsable;
-    selectFns[selectedIdx]?.();
 
     const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
       const n = abilities.length;
       if (n === 0) return;
+      if (!selectionActive) {
+        selectionActive = true;
+        selectFns[selectedIdx]?.();
+        return;
+      }
       let next = selectedIdx;
       if (delta === 'left') next = (selectedIdx - 1 + n) % n;
       else if (delta === 'right') next = (selectedIdx + 1) % n;
@@ -1355,6 +1393,11 @@ export class CombatScene extends Phaser.Scene {
     const keyUp = guard(() => navigate('up'));
     const keyDown = guard(() => navigate('down'));
     const keyConfirm = guard(() => {
+      if (!selectionActive) {
+        selectionActive = true;
+        selectFns[selectedIdx]?.();
+        return;
+      }
       if (canUseFlags[selectedIdx]) commitFns[selectedIdx]();
     });
 
@@ -1411,8 +1454,8 @@ export class CombatScene extends Phaser.Scene {
     this.setEnemyIdlesPaused(true);
     const prompt =
       ability.target === 'enemy'
-        ? `${attacker.name} → select an enemy`
-        : `${attacker.name} → select an ally`;
+        ? `${attacker.name} → ${ability.label} → select an enemy`
+        : `${attacker.name} → ${ability.label} → select an ally`;
     this.showMessage(prompt);
     this.showCancelButton(() => this.handleEscapeKey());
 
@@ -1459,6 +1502,7 @@ export class CombatScene extends Phaser.Scene {
 
     const hexColor = '#' + highlightColor.toString(16).padStart(6, '0');
     let selectedIdx = 0;
+    let selectionActive = false;
     const rows: { chevron: Phaser.GameObjects.Text }[] = [];
 
     targets.forEach((t, i) => {
@@ -1486,18 +1530,15 @@ export class CombatScene extends Phaser.Scene {
           color: '#e6e6e6',
         })
         .setOrigin(0, 0.5);
-      bg.setInteractive({ useHandCursor: true });
-      bg.on('pointerover', () => {
+      const onOver = () => {
         selectedIdx = i;
+        selectionActive = true;
         updateSelection();
-      });
+      };
+      bg.setInteractive({ useHandCursor: true });
+      bg.on('pointerover', onOver);
       bg.on('pointerup', () => onSelect(t));
-      if (t.sprite) {
-        t.sprite.on('pointerover', () => {
-          selectedIdx = i;
-          updateSelection();
-        });
-      }
+      if (t.sprite) t.sprite.on('pointerover', onOver);
       container.add([bg, chevron, txt]);
       rows.push({ chevron });
     });
@@ -1520,34 +1561,46 @@ export class CombatScene extends Phaser.Scene {
         }
       });
     };
-    updateSelection();
+    // No focus indicator is shown until hover or the first keyboard input —
+    // a default-selected enemy on touch devices reads as pre-committed.
 
     // Grid nav: LEFT/RIGHT wrap along linear index; UP/DOWN move by cols (clamp).
     // All handlers no-op while the pause menu is open so its own
     // keyboard handlers own UP/DOWN/ENTER/SPACE/E.
     const n = targets.length;
+    const activate = (): boolean => {
+      if (selectionActive) return false;
+      selectionActive = true;
+      updateSelection();
+      return true;
+    };
     const onLeft = () => {
       if (this.pauseMenuOpen) return;
+      if (activate()) return;
       selectedIdx = (selectedIdx - 1 + n) % n;
       updateSelection();
     };
     const onRight = () => {
       if (this.pauseMenuOpen) return;
+      if (activate()) return;
       selectedIdx = (selectedIdx + 1) % n;
       updateSelection();
     };
     const onUp = () => {
       if (this.pauseMenuOpen) return;
+      if (activate()) return;
       selectedIdx = Math.max(0, selectedIdx - cols);
       updateSelection();
     };
     const onDown = () => {
       if (this.pauseMenuOpen) return;
+      if (activate()) return;
       selectedIdx = Math.min(n - 1, selectedIdx + cols);
       updateSelection();
     };
     const onEnter = () => {
       if (this.pauseMenuOpen) return;
+      if (activate()) return;
       const t = targets[selectedIdx];
       if (t) onSelect(t);
     };
@@ -1609,6 +1662,9 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private showItemMenu(attacker: Unit): void {
+    // Reset the top action text — covers deselect paths (ESC from
+    // item-target back to items) so stale prompts don't linger.
+    this.showMessage(`${attacker.name} → select an item`);
     const { width } = this.scale;
     const run = getRun();
     const leftWidth = width * 0.5;
@@ -1633,13 +1689,14 @@ export class CombatScene extends Phaser.Scene {
     const startY = PANEL_TOP + 58;
 
     // Description tooltip above the panel (matches action menu pattern).
+    const descTouch = isTouchDevice();
     const descText = this.add
       .text(startX, PANEL_TOP - 12, '', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: descTouch ? '20px' : '16px',
         color: '#cfe8e8',
         backgroundColor: '#0a1820cc',
-        padding: { x: 8, y: 4 },
+        padding: { x: descTouch ? 12 : 10, y: descTouch ? 8 : 6 },
         wordWrap: { width: leftWidth - 60 },
       })
       .setOrigin(0, 1)
@@ -1654,6 +1711,10 @@ export class CombatScene extends Phaser.Scene {
     const selectFns: (() => void)[] = [];
     const commitFns: (() => void)[] = [];
     const canUseFlags: boolean[] = [];
+    // Hoisted so per-button pointerover handlers below can sync selectedIdx.
+    let selectedIdx = 0;
+    let selectionActive = false;
+    const BACK_IDX = ITEM_ORDER.length;
 
     ITEM_ORDER.forEach((key, i) => {
       const item = ITEMS[key];
@@ -1704,14 +1765,19 @@ export class CombatScene extends Phaser.Scene {
         this.chooseItemTarget(attacker, item);
       };
 
+      const onOver = () => {
+        selectedIdx = i;
+        selectionActive = true;
+        updateHover();
+      };
       if (canUse) {
         bg.setInteractive({ useHandCursor: true });
-        bg.on('pointerover', updateHover);
+        bg.on('pointerover', onOver);
         bg.on('pointerout', clearHover);
         bg.once('pointerup', commit);
       } else {
         bg.setInteractive();
-        bg.on('pointerover', updateHover);
+        bg.on('pointerover', onOver);
         bg.on('pointerout', clearHover);
       }
 
@@ -1726,7 +1792,6 @@ export class CombatScene extends Phaser.Scene {
     // Navigation treats it as row 2, col 1 (right column below the
     // item grid) so DOWN from the second row reaches it and UP takes
     // you back into the items.
-    const BACK_IDX = ITEM_ORDER.length;
     const backY = startY + 2 * (btnHeight + btnGap) + btnHeight / 2;
     const BACK_FILL = 0x2a1a1a;
     const BACK_HOVER_FILL = 0x4a2a2a;
@@ -1770,12 +1835,17 @@ export class CombatScene extends Phaser.Scene {
       backBg.setFillStyle(BACK_FILL, 0.9);
       backChevron.setVisible(false);
     };
-    backBg.on('pointerover', highlightBack);
+    backBg.on('pointerover', () => {
+      selectedIdx = BACK_IDX;
+      selectionActive = true;
+      highlightBack();
+    });
     backBg.on('pointerout', unhighlightBack);
 
     // Keyboard navigation (matches showActionMenu pattern). BACK is
     // integrated as a virtual extra cell so arrows + Enter reach it.
-    let selectedIdx = 0;
+    // No default indicator is drawn until hover or the first keyboard
+    // input — a pre-selected button on touch reads as already-chosen.
     const firstUsable = canUseFlags.findIndex((c) => c);
     if (firstUsable >= 0) selectedIdx = firstUsable;
     const applySelection = (idx: number): void => {
@@ -1786,11 +1856,15 @@ export class CombatScene extends Phaser.Scene {
         selectFns[idx]?.();
       }
     };
-    applySelection(selectedIdx);
 
     const navigate = (delta: 'up' | 'down' | 'left' | 'right') => {
       const n: number = ITEM_ORDER.length;
       if (n === 0) return;
+      if (!selectionActive) {
+        selectionActive = true;
+        applySelection(selectedIdx);
+        return;
+      }
       let next = selectedIdx;
       if (selectedIdx === BACK_IDX) {
         // From BACK: UP returns to the bottom-right of the grid;
@@ -1827,6 +1901,11 @@ export class CombatScene extends Phaser.Scene {
     const keyUp = guard(() => navigate('up'));
     const keyDown = guard(() => navigate('down'));
     const keyConfirm = guard(() => {
+      if (!selectionActive) {
+        selectionActive = true;
+        applySelection(selectedIdx);
+        return;
+      }
       if (selectedIdx === BACK_IDX) {
         backGoBack();
         return;
@@ -3825,6 +3904,10 @@ export class CombatScene extends Phaser.Scene {
       .rectangle(width / 2, height / 2, width, height, 0x000000, 0.75)
       .setOrigin(0.5)
       .setInteractive();
+    bg.on('pointerdown', () => {
+      playSfx(this, 'sfx-menu-cancel', 0.4);
+      this.closePauseMenu();
+    });
 
     // Per-button color pairs. Each button keeps its own idle/hover
     // palette so they stay visually distinct when focus / hover is on
@@ -3905,6 +3988,7 @@ export class CombatScene extends Phaser.Scene {
 
     const buttons: PauseBtn[] = [resume, audio, quit];
     container.add([bg, resume.text, audio.text, quit.text]);
+    this.addPauseCloseButton(container);
     this.pauseMenuContainer = container;
 
     // Focus border + hover/keyboard selection state. -1 = nothing
@@ -3999,6 +4083,10 @@ export class CombatScene extends Phaser.Scene {
       .rectangle(width / 2, height / 2, width, height, 0x000000, 0.75)
       .setOrigin(0.5)
       .setInteractive();
+    bg.on('pointerdown', () => {
+      playSfx(this, 'sfx-menu-cancel', 0.4);
+      this.closePauseMenu();
+    });
     container.add(bg);
 
     // Shared master / music / sfx sliders (same panel as the non-combat pause
@@ -4018,7 +4106,34 @@ export class CombatScene extends Phaser.Scene {
     backBtn.on('pointerup', () => this.buildPauseMenuMain());
 
     container.add(backBtn);
+    this.addPauseCloseButton(container);
     this.pauseMenuContainer = container;
+  }
+
+  // Top-right X closes the combat pause menu entirely (from either main
+  // or audio-settings submenu). Comfortable tap target for mobile.
+  private addPauseCloseButton(container: Phaser.GameObjects.Container): void {
+    const { width } = this.scale;
+    const btn = this.add
+      .text(width - 16, 16, '✕', {
+        fontFamily: FONT,
+        fontSize: '28px',
+        color: '#e6e6e6',
+        backgroundColor: '#00000088',
+        padding: { x: 14, y: 8 },
+        stroke: '#000000',
+        strokeThickness: 3,
+      })
+      .setOrigin(1, 0)
+      .setDepth(200002)
+      .setInteractive({ useHandCursor: true });
+    btn.on('pointerover', () => btn.setColor('#ffffff'));
+    btn.on('pointerout', () => btn.setColor('#e6e6e6'));
+    btn.on('pointerdown', () => {
+      playSfx(this, 'sfx-menu-cancel', 0.4);
+      this.closePauseMenu();
+    });
+    container.add(btn);
   }
 
   private closePauseMenu(): void {

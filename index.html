@@ -50,7 +50,7 @@
     />
     <link rel="preload" href="./assets/title/bg-off.png" as="image" />
     <link rel="preload" href="./assets/title/bg-on.png" as="image" />
-    <link rel="preload" href="./assets/logo/logo-surge.png" as="image" />
+    <link rel="preload" href="./assets/logo/logo.png" as="image" />
 
     <!-- Self-hosted Silkscreen (no runtime CDN fetch to Google Fonts) -->
     <style>
@@ -96,7 +96,14 @@
          <link rel="preload">'d above. Sits as a fixed overlay above the
          canvas; TitleScene.create() fades + removes it once the real title
          art is on screen. NOT a loading screen by Vibe Jam rules — no bar,
-         no text, just a static splash for visual continuity. */
+         no text, just a static splash for visual continuity.
+
+         Position math mirrors TitleScene's logo on the 1280x720 canvas:
+         center at (640, 311.8) with origin 0.5, displayed width 800px.
+         The .splash-canvas div emulates Phaser's FIT/CENTER_BOTH letterbox
+         (fills the viewport while preserving 16:9), then the img is placed
+         in canvas-relative coordinates so it lines up pixel-for-pixel with
+         the Phaser logo regardless of viewport aspect ratio. */
       #splash {
         position: fixed;
         inset: 0;
@@ -108,16 +115,27 @@
         pointer-events: none;
         transition: opacity 250ms ease-out;
       }
-      #splash img {
-        max-width: 70vw;
-        max-height: 50vh;
-        width: auto;
+      #splash .splash-canvas {
+        position: relative;
+        width: min(100vw, calc(100vh * 16 / 9));
+        height: min(100vh, calc(100vw * 9 / 16));
+      }
+      #splash .splash-canvas img {
+        position: absolute;
+        left: 50%;
+        /* Phaser y = height*0.44 - 5 on 720-tall canvas → 311.8/720 */
+        top: calc(311.8 / 720 * 100%);
+        transform: translate(-50%, -50%);
+        /* Phaser displayed width = 800 / 1280 = 62.5% */
+        width: 62.5%;
         height: auto;
       }
     </style>
   </head>
   <body>
-    <div id="splash"><img src="./assets/logo/logo-surge.png" alt="Reach the Relay" /></div>
+    <div id="splash">
+      <div class="splash-canvas"><img src="./assets/logo/logo.png" alt="Reach the Relay" /></div>
+    </div>
     <div id="game"></div>
     <script type="module" src="/src/main.ts"></script>
     <script async src="https://vibejam.cc/2026/widget.js"></script>

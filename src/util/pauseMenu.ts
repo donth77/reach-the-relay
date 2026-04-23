@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { hasRun, endRun } from '../state/run';
 import { resetLobbyForNextRun } from '../state/lobby';
-import { FONT } from './ui';
+import { FONT, isTouchDevice } from './ui';
 import { playSfx } from './audio';
 import { buildAudioSettingsPanel } from './audioSettingsPanel';
 
@@ -20,6 +20,10 @@ export interface PauseMenuOptions {
   /** Returning true from this callback blocks ESC from opening the
    *  pause menu — e.g. when an NPC dialogue modal owns its own ESC. */
   shouldBlockEsc?: () => boolean;
+  /** Which screen corner the on-screen menu button should sit in.
+   *  Only rendered on touch devices. Defaults to top-right; Lobby uses
+   *  top-left so it doesn't collide with the crew HUD. */
+  buttonCorner?: 'top-right' | 'top-left';
 }
 
 type RowId = 'resume' | 'settings' | 'abandon' | 'quit' | 'back';
@@ -91,6 +95,49 @@ export function installPauseMenuEsc(scene: Phaser.Scene, opts: PauseMenuOptions 
     if (isPauseMenuOpen()) closePauseMenu();
     else if (!opts.shouldBlockEsc?.()) openPauseMenu(scene, opts);
   });
+  // Mobile-only on-screen button: ESC isn't reachable on touch, so surface
+  // the pause menu as a visible affordance. Corner is overridable so scenes
+  // with top-right HUD elements (Lobby's crew widget) can move it.
+  if (isTouchDevice()) installPauseMenuButton(scene, opts);
+}
+
+function installPauseMenuButton(scene: Phaser.Scene, opts: PauseMenuOptions): void {
+  const corner = opts.buttonCorner ?? 'top-right';
+  const { width } = scene.scale;
+  const margin = 12;
+  const x = corner === 'top-right' ? width - margin : margin;
+  const originX = corner === 'top-right' ? 1 : 0;
+
+  const btn = scene.add
+    .text(x, margin, '☰', {
+      fontFamily: FONT,
+      fontSize: '28px',
+      color: '#e6e6e6',
+      backgroundColor: '#00000099',
+      padding: { x: 14, y: 8 },
+      stroke: '#000000',
+      strokeThickness: 3,
+    })
+    .setOrigin(originX, 0)
+    .setScrollFactor(0)
+    .setDepth(90000)
+    .setInteractive({ useHandCursor: true });
+  btn.on('pointerdown', () => {
+    if (isPauseMenuOpen()) return;
+    if (opts.shouldBlockEsc?.()) return;
+    playSfx(scene, 'sfx-menu-confirm', 0.4);
+    openPauseMenu(scene, opts);
+  });
+
+  // Hide while the menu is open so its own ✕ doesn't sit next to this button.
+  const refresh = (): void => {
+    btn.setVisible(!isPauseMenuOpen());
+  };
+  scene.events.on(Phaser.Scenes.Events.UPDATE, refresh);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    scene.events.off(Phaser.Scenes.Events.UPDATE, refresh);
+    btn.destroy();
+  });
 }
 
 function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
@@ -111,7 +158,12 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
     .rectangle(width / 2, height / 2, width, height, 0x000000, 0.78)
     .setScrollFactor(0)
     .setInteractive();
+  backdrop.on('pointerdown', () => {
+    playSfx(scene, 'sfx-menu-cancel', 0.4);
+    closePauseMenu();
+  });
   container.add(backdrop);
+  addCloseButton(scene, container, width);
 
   const canAbandon = opts.canAbandon ?? hasRun();
   const titleKey = opts.titleSceneKey ?? 'Title';
@@ -211,7 +263,12 @@ function buildSettingsSubmenu(scene: Phaser.Scene, opts: PauseMenuOptions): void
     .rectangle(width / 2, height / 2, width, height, 0x000000, 0.78)
     .setScrollFactor(0)
     .setInteractive();
+  backdrop.on('pointerdown', () => {
+    playSfx(scene, 'sfx-menu-cancel', 0.4);
+    closePauseMenu();
+  });
   container.add(backdrop);
+  addCloseButton(scene, container, width);
 
   buildAudioSettingsPanel(scene, container, width / 2, height / 2 - 40);
 
@@ -239,6 +296,35 @@ function buildSettingsSubmenu(scene: Phaser.Scene, opts: PauseMenuOptions): void
     opts,
     inSettings: true,
   };
+}
+
+// Top-right X that dismisses the whole pause menu. Sized as a comfortable
+// mobile tap target; text is plenty readable with padding.
+function addCloseButton(
+  scene: Phaser.Scene,
+  container: Phaser.GameObjects.Container,
+  width: number,
+): void {
+  const btn = scene.add
+    .text(width - 16, 16, '✕', {
+      fontFamily: FONT,
+      fontSize: '28px',
+      color: '#e6e6e6',
+      backgroundColor: '#00000088',
+      padding: { x: 14, y: 8 },
+      stroke: '#000000',
+      strokeThickness: 3,
+    })
+    .setOrigin(1, 0)
+    .setScrollFactor(0)
+    .setInteractive({ useHandCursor: true });
+  btn.on('pointerover', () => btn.setColor('#ffffff'));
+  btn.on('pointerout', () => btn.setColor('#e6e6e6'));
+  btn.on('pointerdown', () => {
+    playSfx(scene, 'sfx-menu-cancel', 0.4);
+    closePauseMenu();
+  });
+  container.add(btn);
 }
 
 function createRows(

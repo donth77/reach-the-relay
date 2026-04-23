@@ -591,6 +591,7 @@ export class LobbyScene extends Phaser.Scene {
 
     installPauseMenuEsc(this, {
       shouldBlockEsc: () => isDialogueOpen() || isMapOpen() || isBriefingOpen(),
+      buttonCorner: 'top-left',
     });
 
     this.setupCollisionDebug();
