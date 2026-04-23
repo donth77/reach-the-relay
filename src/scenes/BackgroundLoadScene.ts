@@ -346,6 +346,20 @@ export class BackgroundLoadScene extends Phaser.Scene {
     this.load.image('lobby-supply-shelf', 'assets/sprites/props/lobby/supply-shelf.png');
     this.load.image('lobby-map-full', 'assets/ui/map-full.png');
 
+    // --- Route-map screen (RouteMapScene) ---
+    // Big map artwork: 1 blurred full + 3 per-route highlight crops + 3
+    // matching blur crops. ~7.8 MB total. Preloading here means tapping
+    // into Route Select doesn't pop a fresh download. RouteMapScene also
+    // re-issues these in its own preload as a fallback — Phaser skips
+    // re-loads when the cache key already exists.
+    this.load.image('lobby-map-full-blur', 'assets/ui/map-full-blur.png');
+    this.load.image('ui-map-highway', 'assets/ui/map-highway.png');
+    this.load.image('ui-map-substation', 'assets/ui/map-substation.png');
+    this.load.image('ui-map-mall', 'assets/ui/map-mall.png');
+    this.load.image('ui-map-highway-blur', 'assets/ui/map-highway-blur.png');
+    this.load.image('ui-map-substation-blur', 'assets/ui/map-substation-blur.png');
+    this.load.image('ui-map-mall-blur', 'assets/ui/map-mall-blur.png');
+
     // --- Lobby idle animations ---
     for (let i = 0; i < 9; i++) {
       const padded = i.toString().padStart(3, '0');
