@@ -13,7 +13,10 @@ Design docs live in `.claude/`:
 - `concept2-escort.md` — full game concept (world, mechanics, visual direction)
 - `implementation-plan.md` — build plan + pipeline notes
 - `rules.md` — combat rule reference (older; `GAME_MECHANICS.md` is now the canonical rules doc)
+- `AnimationPlan.md`, `JourneyPlan.md`, `VICTORY_CUTSCENE_PLAN.md` — feature-level plans for combat anims, journey pacing, and the relay cutscene
+- `battle-simulations{,2,3}.md` — captured outputs from `npm run sim` used to balance enemy HP/damage
 - `lobby.md`, `games.md`, `concepts.md` — supporting design notes
+- `ITCH_DESCRIPTION.md` / `.html` — store-page copy for the itch.io submission
 
 **Jam goal: participate, not win.** Scope small, pick fun-to-build over prize-optimized. Don't suggest skipping polish that the user explicitly asked for.
 
@@ -30,9 +33,10 @@ Design docs live in `.claude/`:
 src/
   main.ts                         Phaser Game config + scene list + audio-settings + debug badges
   scenes/
-    BootScene.ts                  preload sprites + SFX + critical-path music + UI
-    BackgroundLoadScene.ts        parallel loader — streams the ~35 MB of route/journey music in the background while the player is on Title
-    TitleScene.ts                 attract screen + "press any key" + mute toggle (persisted to localStorage)
+    BootScene.ts                  tier-1 preload — sprites + SFX + critical-path music + UI
+    BackgroundLoadScene.ts        tier-2a loader — streams route/journey music in the background while on Title; hands off to CombatLoadScene once lobby-tier assets are cached
+    CombatLoadScene.ts            tier-2b loader — combat frames for all party + enemy anims, map overlays, deferred music; runs while player is in Lobby / picking recruits. Sets `assets:loaded = true` on completion.
+    TitleScene.ts                 attract screen + "press any key" + mute toggle (persisted to localStorage). `V` hotkey test-triggers RelayCutsceneScene.
     LeaderSelectScene.ts          pick 1 of 5 classes as playable avatar
     LobbyScene.ts                 walkable Greenhouse — WASD/arrows, click-to-interact, NPC dialogue, map board, exit portal
       lobby/npcAgent.ts           NpcAgent class (patrol state machine, proximity prompt, dialogue, click-to-interact)
@@ -40,11 +44,14 @@ src/
       lobby/crewHud.ts            top-right crew/VIP HUD widget
     PartySelectScene.ts           old standalone party picker (kept as a legacy path)
     PartySelectTerminalScene.ts   in-lobby terminal that pauses Lobby and overlays the picker
-    RouteScene.ts                 route select (3 difficulty tiers + TEST routes)
+    RouteScene.ts                 list-style route select (3 difficulty tiers + TEST routes)
+    RouteMapScene.ts              map-based route picker — full-map background + per-route PNG overlays positioned at measured fractional coords
     JourneyScene.ts               between-encounter path animation with head-portrait markers
     CombatScene.ts                ATB combat, the bulk of the codebase
     RestScene.ts                  between-encounter heal/revive; refills maxUsesPerRest abilities
-    RunCompleteScene.ts           victory/defeat screen + score calc
+    RelayCutsceneScene.ts         victory cutscene — 4-beat relay activation. Played after final encounter clears and before RunCompleteScene.
+    RunCompleteScene.ts           victory/defeat screen + score calc + opt-in leaderboard submit
+    LeaderboardScene.ts           scores table with route-filter tabs; remote fetch with localStorage fallback (banner when fallback triggers)
   data/
     classes.ts                    party class defs (Vanguard/Netrunner/Medic/Scavenger/Cybermonk); AbilityDef incl. maxUsesPerRest
     enemies.ts                    enemy defs + VULNERABILITY_GLYPH map + signatureAoE/shockwave boss fields
@@ -55,6 +62,8 @@ src/
   state/
     run.ts                        active-run state (party, route, encounter index, HP/MP, VIP HP, inventory, abilityUsesRemaining)
     lobby.ts                      pre-run state (leader, recruits, last lobby pose) — survives LeaderSelect → Lobby → Route transitions
+    player.ts                     persistent username (localStorage) + `ingestUrlUsername()` for `?username=<name>` portal ingest
+    leaderboard.ts                submit/fetch adapter with localStorage fallback; exports `ROUTE_BONUS_BY_DIFFICULTY` (easy 100 / medium 400 / hard 800)
   combat/
     types.ts                      Unit interface, Side type, ATB/PANEL/DEPTH/DIMMED constants
     helpers.ts                    pure helpers: calculateDamage (incl. vulnerability/resistance), getUnitFacing, validTargets, validItemTargets
@@ -64,13 +73,16 @@ src/
     runSim.ts                     CLI entry — runs N simulated battles per matchup; emits a markdown report (`npm run sim`)
   util/
     logger.ts                     in-memory ring-buffer logger (L key copies to clipboard) + debug badge mounts
-    ui.ts                         shared FONT constant
+    ui.ts                         shared FONT constant + isTouchDevice()
     audio.ts                      initAudioSettings + getVol/setVol (master/music/sfx categories) + stopAllMusic
     music.ts                      playMusicPool — plays a random pool member, re-picks on loop end
     musicToggle.ts                title-screen DOM mute button (48×48 a11y target, persisted to localStorage)
     audioSettingsPanel.ts         shared volume sliders panel (used by pause menu + combat pause)
     pauseMenu.ts                  shared ESC pause menu used by all non-title, non-combat scenes
     briefingModal.ts              shared mission-briefing modal (Title / Lobby map / Dr. Vey NPC)
+    usernamePrompt.ts             shared callsign-entry modal for leaderboard; scenes gate ESC via `isUsernamePromptOpen()`
+    button.ts                     `createHoverButton` — shared green-pill button used across pause menu / RestScene / RunComplete / Leaderboard
+    orientationLock.ts            mobile portrait lockout — `screen.orientation.lock('landscape')` on first gesture + DOM "rotate your device" overlay
     headCrop.ts                   per-class face-crop rects for compact portraits (HEAD_CROP_BY_CLASS)
     bag.ts                        grab-bag RNG — shuffles a pool, cycles without repeats
     portal.ts                     Vibe Jam 2026 webring integration (entry detection + exit-URL builder)
@@ -87,6 +99,10 @@ scripts/
 sprite-dev/                       working folder, gitignored (whole folder)
   _review/                        TEMP folder for asset previews; gitignored, delete when user has picked
   unused/                         moved-out backups of overwritten/superseded sprites
+worker/                           Cloudflare Worker + D1 leaderboard backend (separate deploy — see "Leaderboard" section)
+  src/index.ts                    POST /submit + GET /top endpoints, CORS wide open
+  schema.sql                      D1 table definition
+  wrangler.toml                   Worker config (D1 binding, route)
 ```
 
 ## Conventions
@@ -136,7 +152,7 @@ sprite-dev/                       working folder, gitignored (whole folder)
 - **BBOX table** in `createBattleSprite()` maps native canvas size → `{ centerX, centerY, feetY, headY }` for origin/shadow/HP-bar placement. Add a new entry whenever a new sprite size is introduced (measure via PIL opaque-bbox — see example below).
 - `flipSprite: true` on `EnemyDef` mirrors the sprite horizontally (use if source art faces the wrong way)
 - `scale` field determines displayed size (currently ~1.8-2.5 for most; Wreckwarden boss is 2.2 on 136px canvas)
-- `formationSpread` multiplier on EnemyDef can widen spacing for large sprites (default 1; `Math.max(1, ...)` floor so `0` = off)
+- `formationSpread` multiplier on EnemyDef can widen spacing for large sprites (default 1). The encounter-level value is `Math.max(1, ...)` across **all** enemies in the encounter — one big enemy spreads everyone else too. Values `< 1` are effectively no-ops (floored to 1), not "off".
 
 ### Floaty enemies (Scout Drone, Nanite Swarm)
 
@@ -155,7 +171,8 @@ sprite-dev/                       working folder, gitignored (whole folder)
 - **Pre-run state lives in `state/lobby.ts`** — leader id, recruited set, last player pose. Survives LeaderSelect → Lobby → PartySelectTerminal round-trips so the player doesn't snap back to spawn.
 - **`PartySelectTerminalScene` pauses (not stops) LobbyScene** — so NPC patrol state, player position, and music survive intact across the overlay
 - `pauseMenu.ts` is the shared ESC menu for non-combat scenes. Scenes call `installPauseMenuEsc(this, { shouldBlockEsc: () => ... })` — the predicate blocks ESC from opening the menu when another modal (dialogue, map, briefing) owns the key.
-- **Vibe Jam webring** (`util/portal.ts`): `?portal=true` query param skips Title/LeaderSelect/PartySelect and drops the player straight into Lobby with a default party (Vanguard leader + Medic + Scavenger). An exit portal prop in the Lobby redirects to `vibejam.cc/portal/2026` with identity query params.
+- **Vibe Jam webring** (`util/portal.ts`): `?portal=true` query param skips Title/LeaderSelect/PartySelect and drops the player straight into Lobby with a default party (Vanguard leader + Medic + Scavenger). An exit portal prop in the Lobby redirects to `vibejam.cc/portal/2026` with identity query params. `?username=<name>` is ingested silently on boot by `ingestUrlUsername()` (see `state/player.ts`) so portal visitors never see the callsign prompt.
+- **`L` key is registered per-scene.** Currently only in CombatScene — if you want log-copy in another scene, register it explicitly. Collision-debug toggle (`` ` `` backtick on Lobby, mounted from `main.ts`) is independent.
 
 ### Combat flow gotchas
 
@@ -174,10 +191,19 @@ sprite-dev/                       working folder, gitignored (whole folder)
 Victory-only, computed in `RunCompleteScene`:
 
 ```
-score = vipHp × 2 + Σ partyHp[key]
+baseScore  = vipHp × 2 + Σ partyHp[key]
+finalScore = baseScore + ROUTE_BONUS_BY_DIFFICULTY[run.route.difficulty]
 ```
 
-No difficulty bonus, no turn/MP penalty. Don't refactor without confirming with the user — it's intentionally simple for the jam.
+`ROUTE_BONUS_BY_DIFFICULTY` lives in `state/leaderboard.ts`: easy 100, medium 400, hard 800. The flat bonus ensures harder routes always outrank easier ones even when the player cleared them at lower HP. No turn/MP penalty. Don't refactor without confirming with the user.
+
+### Leaderboard
+
+- **Backend**: Cloudflare Worker + D1 in `worker/`, deployed separately. Client points at it via `VITE_LEADERBOARD_API` env var. Endpoints: `POST /submit` (body `{ username, score, leaderId, route, durationSec }` → `{ ok, rank }`) and `GET /top?route=<id>&limit=<n>` (route optional — omitted = global board).
+- **Client adapter**: `state/leaderboard.ts` always writes to localStorage first (guaranteed persistence), then fire-and-forgets to the Worker if configured. Reads try remote first, fall back to localStorage with a "showing local scores only" banner.
+- **Submit is opt-in**: on victory `RunCompleteScene` shows a `[ SUBMIT SCORE ]` button. First submit opens `usernamePrompt.ts` to capture a callsign; subsequent runs auto-submit under the stored name. Cancel at any stage is fine — leaderboard never blocks progression.
+- **Username**: persisted via `state/player.ts` (localStorage key `player:username`). Regex is `/^[A-Za-z0-9 _]{1,16}$/` — server-side validation in `worker/src/index.ts` must match.
+- Tie-break is `score DESC, duration_sec ASC` (faster clears win ties).
 
 ## Asset generation pipeline
 

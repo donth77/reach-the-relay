@@ -817,20 +817,28 @@ export class LobbyScene extends Phaser.Scene {
     const feetX = this.player.x;
     const feetY = this.player.y + feetYOffset;
     this.updateNpcPrompts(feetX, feetY);
-    // Prop prompts yield to NPC prompts when overlapping — e.g. standing
-    // between Dr. Vey and the map board should only show Dr. Vey's "▼ E"
-    // so the player isn't staring at two prompts with ambiguous priority.
-    // Interact dispatcher (`tryInteract`) already picks the closest target,
-    // so this is purely the visual half of that same rule.
+    // Visual priority has to mirror `tryInteract`:
+    //   1. Terminal in range → always wins (matches the interact dispatcher's
+    //      absolute terminal priority). Hide NPC + other-prop prompts.
+    //   2. Otherwise → NPC prompts win over map/relay board prompts so the
+    //      player isn't staring at two "▼ E"s with ambiguous priority.
+    const nearTerminal = this.isPlayerNearTerminal();
     const anyNpcInRange = this.npcs.some((npc) => npc.isInInteractionRange(feetX, feetY));
+    if (nearTerminal) {
+      for (const npc of this.npcs) npc.setPromptVisible(false);
+    }
     if (this.terminalPromptText) {
-      this.terminalPromptText.setVisible(this.isPlayerNearTerminal() && !anyNpcInRange);
+      this.terminalPromptText.setVisible(nearTerminal);
     }
     if (this.mapBoardPromptText) {
-      this.mapBoardPromptText.setVisible(this.isPlayerNearMapBoard() && !anyNpcInRange);
+      this.mapBoardPromptText.setVisible(
+        this.isPlayerNearMapBoard() && !nearTerminal && !anyNpcInRange,
+      );
     }
     if (this.relayBoardPromptText) {
-      this.relayBoardPromptText.setVisible(this.isPlayerNearRelayBoard() && !anyNpcInRange);
+      this.relayBoardPromptText.setVisible(
+        this.isPlayerNearRelayBoard() && !nearTerminal && !anyNpcInRange,
+      );
     }
 
     // Mobile SELECT button: only visible when tapping it would actually
