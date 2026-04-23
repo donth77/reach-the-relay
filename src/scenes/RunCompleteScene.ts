@@ -58,6 +58,41 @@ export class RunCompleteScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const run = getRun();
 
+    // Keyboard focus cycle — declared up-front so button factories can
+    // push into it as they create buttons (including late-added ones
+    // like the [ SUBMIT SCORE ] retry that only materializes if the
+    // player cancels the auto-opened submit modal). Defined at the
+    // bottom of create() are the keyboard handlers + border renderer
+    // that consume this array.
+    type FocusableBtn = { text: Phaser.GameObjects.Text; activate: () => void };
+    const focusables: FocusableBtn[] = [];
+    const focusBorder = this.add.graphics().setDepth(10000);
+    let focusedIdx = -1;
+    const redrawFocusBorder = (): void => {
+      focusBorder.clear();
+      if (focusedIdx < 0) return;
+      const f = focusables[focusedIdx];
+      if (!f) return;
+      const b = f.text.getBounds();
+      const pad = 6;
+      focusBorder.lineStyle(3, 0xffffff, 0.9);
+      focusBorder.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
+    };
+    const registerFocusable = (btn: Phaser.GameObjects.Text, activate: () => void): void => {
+      const idx = focusables.length;
+      focusables.push({ text: btn, activate });
+      btn.on('pointerover', () => {
+        focusedIdx = idx;
+        redrawFocusBorder();
+      });
+      btn.on('pointerout', () => {
+        if (focusedIdx === idx) {
+          focusedIdx = -1;
+          redrawFocusBorder();
+        }
+      });
+    };
+
     if (this.outcome === 'victory') {
       // Victory: the main theme is already playing from RelayCutsceneScene.
       // `playMusicPool` no-ops when the current track is in the new pool,
@@ -140,31 +175,31 @@ export class RunCompleteScene extends Phaser.Scene {
         .setOrigin(0.5);
 
       // LEADERBOARD button — always visible on victory, right slot.
-      // Return value unused; focus-cycle collection finds buttons by
-      // label text below.
-      createHoverButton(this, {
+      const openLeaderboard = (): void => {
+        // Keep the run state alive — BACK from the leaderboard should
+        // return to THIS victory screen so the player sees their score
+        // / rank / HP table again before choosing CONTINUE. `endRun` +
+        // `resetLobbyForNextRun` fire only from the actual CONTINUE
+        // path (`returnToTitle`), not here.
+        this.scene.start('Leaderboard', {
+          initialFilter: run.route.id as LeaderboardRoute,
+          returnScene: 'RunComplete',
+          returnSceneData: {
+            outcome: this.outcome,
+            reason: this.reason,
+          },
+        });
+      };
+      const leaderboardBtn = createHoverButton(this, {
         x: RIGHT_X,
         y: ROW_Y,
         label: '[ LEADERBOARD ]',
         fontSize: '24px',
         padding: { x: 18, y: 8 },
         ...GOLD_BUTTON_STYLE,
-        onClick: () => {
-          // Keep the run state alive — BACK from the leaderboard
-          // should return to THIS victory screen so the player sees
-          // their score / rank / HP table again before choosing
-          // CONTINUE. `endRun` + `resetLobbyForNextRun` now fire only
-          // from the actual CONTINUE path (`returnToTitle`), not here.
-          this.scene.start('Leaderboard', {
-            initialFilter: run.route.id as LeaderboardRoute,
-            returnScene: 'RunComplete',
-            returnSceneData: {
-              outcome: this.outcome,
-              reason: this.reason,
-            },
-          });
-        },
+        onClick: openLeaderboard,
       });
+      registerFocusable(leaderboardBtn, openLeaderboard);
 
       if (cachedSubmitResult && cachedSubmitResult.score === finalScore) {
         // Re-entry from Leaderboard BACK — rank already resolved this run,
@@ -194,6 +229,27 @@ export class RunCompleteScene extends Phaser.Scene {
         const hasStoredCallsign = !!getUsername();
 
         const showSubmitButton = (): void => {
+          const openCallsignPrompt = (): void => {
+            // Button-triggered open uses the default "ENTER CALLSIGN"
+            // framing — the submit-confirm title + score subtitle are
+            // reserved for the auto-open-on-arrival case.
+            openUsernamePrompt(this, {
+              onConfirm: () => {
+                submitBtn.destroy();
+                // Drop the destroyed button out of the focus list so
+                // TAB doesn't land on a dead target after confirm.
+                const idx = focusables.findIndex((f) => f.text === submitBtn);
+                if (idx >= 0) focusables.splice(idx, 1);
+                rankText!.setVisible(true);
+                rankText!.setText('RANK  —');
+                rankText!.setColor('#8aa5cf');
+                void this.submitLeaderboardEntry(finalScore, rankText!, true);
+              },
+              onCancel: () => {
+                // No-op — button stays for a retry.
+              },
+            });
+          };
           const submitBtn = createHoverButton(this, {
             x: LEFT_X,
             y: ROW_Y,
@@ -201,24 +257,9 @@ export class RunCompleteScene extends Phaser.Scene {
             fontSize: '24px',
             padding: { x: 18, y: 8 },
             ...GOLD_BUTTON_STYLE,
-            onClick: () => {
-              // Button-triggered open uses the default "ENTER CALLSIGN"
-              // framing — the submit-confirm title + score subtitle are
-              // reserved for the auto-open-on-arrival case.
-              openUsernamePrompt(this, {
-                onConfirm: () => {
-                  submitBtn.destroy();
-                  rankText!.setVisible(true);
-                  rankText!.setText('RANK  —');
-                  rankText!.setColor('#8aa5cf');
-                  void this.submitLeaderboardEntry(finalScore, rankText!, true);
-                },
-                onCancel: () => {
-                  // No-op — button stays for a retry.
-                },
-              });
-            },
+            onClick: openCallsignPrompt,
           });
+          registerFocusable(submitBtn, openCallsignPrompt);
         };
 
         if (hasStoredCallsign) {
@@ -314,62 +355,18 @@ export class RunCompleteScene extends Phaser.Scene {
       padding: { x: 28, y: 12 },
       onClick: () => this.returnToTitle(),
     });
+    registerFocusable(continueBtn, () => this.returnToTitle());
 
-    // Keyboard focus cycle — collect all on-screen buttons (order:
-    // left → right → continue) and draw a white border around the
-    // currently focused one. TAB / LEFT / RIGHT cycle; ENTER / SPACE
-    // activate. Makes the victory screen keyboard-complete while
-    // preserving the existing per-button pointer handlers.
-    type FocusableBtn = { text: Phaser.GameObjects.Text; activate: () => void };
-    const focusables: FocusableBtn[] = [];
-    // Collect interactive children in insertion order, filter to the
-    // gold pills + continue. [ SUBMIT SCORE ] only exists on the
-    // pre-submit path; once confirmed it's destroyed and replaced by
-    // the rank text.
-    const children = this.children.getAll() as Phaser.GameObjects.Text[];
-    for (const child of children) {
-      if (!(child instanceof Phaser.GameObjects.Text)) continue;
-      const t = child.text;
-      if (t === '[ LEADERBOARD ]') {
-        focusables.push({
-          text: child,
-          activate: () => child.emit('pointerup'),
-        });
-      } else if (t === '[ SUBMIT SCORE ]') {
-        focusables.push({
-          text: child,
-          activate: () => child.emit('pointerup'),
-        });
-      }
-    }
-    focusables.push({ text: continueBtn, activate: () => this.returnToTitle() });
-
-    // -1 = no focus (border hidden). Flips to a real index when the
-    // player hovers a button OR presses a cycle key. Hovering OUT
-    // clears back to -1 so the border never lingers once the mouse
-    // leaves its button.
-    let focusedIdx = -1;
-    const focusBorder = this.add.graphics();
-    const redrawFocusBorder = (): void => {
-      focusBorder.clear();
-      if (focusedIdx < 0) return;
-      const f = focusables[focusedIdx];
-      if (!f) return;
-      const b = f.text.getBounds();
-      const pad = 6;
-      focusBorder.lineStyle(3, 0xffffff, 0.9);
-      focusBorder.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
-    };
-    // CONTINUE is last in the focusables list; use it as the default
-    // first selection when the player starts keyboard-navigating.
+    // Keyboard focus cycle — TAB / LEFT / RIGHT cycle between the
+    // buttons registered above via `registerFocusable`. Hover handlers
+    // are wired in the helper; this block only adds the keyboard
+    // dispatch. With no current focus, the first cycle key lands on
+    // CONTINUE (the most common action on this screen) — it's always
+    // the last entry in `focusables` because it's registered last.
     const CONTINUE_IDX = focusables.length - 1;
     const moveFocus = (delta: number): void => {
       const n = focusables.length;
       if (n === 0) return;
-      // First cycle key with no current focus: land on CONTINUE
-      // (the most common action on this screen). Delta is not
-      // applied — the player has to press the key again to cycle
-      // away. Subsequent presses wrap around the full list.
       if (focusedIdx < 0) {
         focusedIdx = CONTINUE_IDX;
       } else {
@@ -388,18 +385,6 @@ export class RunCompleteScene extends Phaser.Scene {
       const f = focusables[focusedIdx];
       if (f) f.activate();
     };
-    focusables.forEach((f, i) => {
-      f.text.on('pointerover', () => {
-        focusedIdx = i;
-        redrawFocusBorder();
-      });
-      f.text.on('pointerout', () => {
-        if (focusedIdx === i) {
-          focusedIdx = -1;
-          redrawFocusBorder();
-        }
-      });
-    });
     // Focus-cycle shortcuts are suppressed while the callsign input modal
     // is open — otherwise typing letters like A/D/E/SPACE or pressing
     // TAB/ENTER would both enter characters AND move focus on the victory
