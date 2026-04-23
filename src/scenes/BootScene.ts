@@ -2,19 +2,24 @@ import * as Phaser from 'phaser';
 import { isPortalEntry, DEFAULT_PORTAL_LEADER, DEFAULT_PORTAL_RECRUITS } from '../util/portal';
 import { setLeader, addRecruit } from '../state/lobby';
 
+const PARTY_KEYS = ['vanguard', 'netrunner', 'medic', 'scavenger', 'cybermonk'] as const;
+
 /**
- * Critical-path preload ONLY: title art, main-theme music, and the two menu
- * SFX. Everything else (party sprites + animations, NPCs, enemies, combat
- * backgrounds, combat SFX, lobby music, lobby props, VFX) is loaded by
- * BackgroundLoadScene in parallel with the user being on Title. This keeps
- * the blank-viewport window as short as possible, satisfying Vibe Jam rule 8
- * ("no loading screens / heavy downloads — has to be almost instantly in the
- * game").
+ * Critical-path preload — loads only what's needed to render TitleScene
+ * and the very next scene (LeaderSelect). Everything else lives in
+ * BackgroundLoadScene which runs in parallel with the user being on Title /
+ * LeaderSelect, so the player can start interacting almost immediately.
  *
- * TitleScene.activateSelected gates its "Start Game" / non-Leaderboard
- * transitions on the `assets:loaded` registry flag set by BackgroundLoad
- * completion, so the first scene past Title never renders with missing
- * sprites.
+ * What's here:
+ *  - Title art (bg, logo, main-theme music, menu SFX)
+ *  - LeaderSelect: party south-facing portraits (5 small images) + lobby
+ *    music (so the lobby theme is ready to play when the player hits the
+ *    LeaderSelect screen)
+ *
+ * Everything else (per-direction party sprites, all animation frames, NPCs,
+ * enemies, combat backgrounds, lobby props, combat SFX, route + journey
+ * music) is in BackgroundLoadScene. LeaderSelect.confirmLeader gates its
+ * transition to Lobby on the `assets:loaded` flag set by BackgroundLoad.
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -34,20 +39,29 @@ export class BootScene extends Phaser.Scene {
     this.load.image('title-bg-off', 'assets/title/bg-off.png');
     this.load.image('title-logo', 'assets/logo/logo-surge.png');
 
-    // Title music + menu SFX — the only audio needed before LeaderSelect.
+    // Title music + menu SFX.
     this.load.audio('music-main-theme', 'assets/audio/music/main-theme.mp3');
     this.load.audio('sfx-menu-confirm', 'assets/audio/sfx/menu-confirm.mp3');
     this.load.audio('sfx-menu-cancel', 'assets/audio/sfx/menu-cancel.mp3');
+
+    // LeaderSelect needs each class's south-facing portrait + lobby music.
+    // Five small images — cheap to include here so Start Game → LeaderSelect
+    // never blocks.
+    for (const key of PARTY_KEYS) {
+      this.load.image(`${key}-south`, `assets/sprites/party/${key}/south.png`);
+    }
+    this.load.audio('music-lobby-theme', 'assets/audio/music/lobby-theme.mp3');
   }
 
   create(): void {
     // Pre-initialize the flag so BackgroundLoadScene's later set-to-true
     // fires `changedata` (not `setdata` — which only fires on first-ever
-    // set of a key). Waiters in TitleScene only listen for `changedata`,
-    // so skipping this init causes the first Start-Game click to hang.
+    // set of a key). Waiters that listen for `changedata` would otherwise
+    // miss the very first transition to true.
     this.registry.set('assets:loaded', false);
 
-    // Kick off background loading of everything else in parallel with Title.
+    // Kick off background loading of everything else in parallel with
+    // Title + LeaderSelect.
     this.scene.launch('BackgroundLoad');
 
     // Vibe Jam 2026 webring entry: if the URL has `?portal=true`, skip all
@@ -57,9 +71,8 @@ export class BootScene extends Phaser.Scene {
     if (isPortalEntry()) {
       setLeader(DEFAULT_PORTAL_LEADER);
       for (const id of DEFAULT_PORTAL_RECRUITS) addRecruit(id);
-      // Portal entry needs assets LoadingScene isn't done with yet, so
-      // wait for the background load to complete before transitioning to
-      // Lobby. TitleScene does the equivalent gating for manual entry.
+      // Lobby needs the full asset bundle. Wait for BackgroundLoad if
+      // it's still in flight before transitioning.
       this.waitForAssetsThen(() => this.scene.start('Lobby'));
       return;
     }

@@ -273,10 +273,10 @@ export class TitleScene extends Phaser.Scene {
       // No callsign gate — leaderboard participation is optional. If the
       // player wins without a callsign, the RunComplete screen offers
       // an inline opt-in prompt before submitting.
-      // Wait for BackgroundLoadScene to finish (party sprites etc. live
-      // there now — see BootScene + BackgroundLoadScene). On a decent
-      // connection this is already done by the time the user clicks.
-      this.waitForAssetsThen(() => this.scene.start('LeaderSelect'));
+      // LeaderSelect's assets (party south sprites + lobby music) are in
+      // BootScene, so this transition is always immediate. The wait for
+      // the rest of the asset bundle happens at LeaderSelect.confirmLeader.
+      this.scene.start('LeaderSelect');
     } else if (row.id === 'Leaderboard') {
       this.scene.start('Leaderboard', {
         initialFilter: 'all',
@@ -287,26 +287,6 @@ export class TitleScene extends Phaser.Scene {
       // on open, and without the delay the same click that opened it also closes it.
       this.time.delayedCall(1, () => openBriefing(this));
     }
-  }
-
-  /**
-   * If BackgroundLoadScene has finished, invoke `next` immediately.
-   * Otherwise subscribe to the registry flag it sets on completion and
-   * invoke once it flips. Used to gate Start Game / dev-test transitions
-   * on the deferred sprite/SFX/music bundle.
-   */
-  private waitForAssetsThen(next: () => void): void {
-    if (this.registry.get('assets:loaded')) {
-      next();
-      return;
-    }
-    const onChange = (_parent: unknown, key: string, value: unknown): void => {
-      if (key === 'assets:loaded' && value) {
-        this.registry.events.off('changedata', onChange);
-        next();
-      }
-    };
-    this.registry.events.on('changedata', onChange);
   }
 
   /**

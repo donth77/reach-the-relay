@@ -236,6 +236,29 @@ export class LeaderSelectScene extends Phaser.Scene {
     const key = CLASS_ORDER[this.currentIdx];
     playSfx(this, 'sfx-menu-confirm', 0.5);
     setLeader(key);
-    this.scene.start('Lobby');
+    // Lobby needs the full asset bundle — NPC sprites, lobby props, walking
+    // animations, etc. — which lives in BackgroundLoadScene. Usually done
+    // by the time the player picks a leader, but wait if not.
+    this.waitForAssetsThen(() => this.scene.start('Lobby'));
+  }
+
+  /**
+   * If BackgroundLoadScene has finished, invoke `next` immediately. Otherwise
+   * subscribe to the registry flag it sets on completion and invoke once it
+   * flips. Pre-init in BootScene.create guarantees `changedata` (not the
+   * first-set-only `setdata`) fires, so this listener is reliable.
+   */
+  private waitForAssetsThen(next: () => void): void {
+    if (this.registry.get('assets:loaded')) {
+      next();
+      return;
+    }
+    const onChange = (_parent: unknown, key: string, value: unknown): void => {
+      if (key === 'assets:loaded' && value) {
+        this.registry.events.off('changedata', onChange);
+        next();
+      }
+    };
+    this.registry.events.on('changedata', onChange);
   }
 }
