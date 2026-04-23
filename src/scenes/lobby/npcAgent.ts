@@ -93,6 +93,13 @@ export interface NpcAgentConfig {
    *  Cybermonk seated on a cushion) that pushes the player further
    *  from the NPC's sprite center than the default reach allows. */
   interactionRadius?: number;
+  /** Per-direction collision-rect extensions (in px). Pushes the edges
+   *  of the default 42×24 feet-rect outward. Use for NPCs whose
+   *  interactable footprint extends past their feet — e.g. the
+   *  Scavenger working at a bench (right side extends into the bench),
+   *  or the Netrunner whose chair + desk push player-reach outward on
+   *  all sides. */
+  collisionExtend?: { top?: number; bottom?: number; left?: number; right?: number };
 }
 
 type PatrolState = 'walking-forward' | 'paused-forward' | 'walking-back' | 'paused-back';
@@ -106,6 +113,7 @@ export class NpcAgent {
   private sprite: Phaser.GameObjects.Sprite;
   private prompt: Phaser.GameObjects.Text;
   private _collisionRect: Phaser.Geom.Rectangle;
+  private _collisionExtend: { top: number; bottom: number; left: number; right: number };
   private cfg: Required<
     Pick<NpcAgentConfig, 'patrolAxis' | 'patrolRange' | 'speed' | 'pauseMs' | 'initialFacing'>
   > &
@@ -159,13 +167,23 @@ export class NpcAgent {
 
     // Collision rect = sprite base (where feet plant). Narrow + short
     // so the player can pass behind the NPC's head visually without
-    // being blocked.
+    // being blocked. Optional collisionExtend expands the rect outward
+    // per direction — the extension is stored and reapplied every
+    // frame in update() since the rect's y tracks feetY.
     const base = { w: 42, h: 24 };
+    const ext = config.collisionExtend ?? {};
+    this._collisionExtend = {
+      top: ext.top ?? 0,
+      bottom: ext.bottom ?? 0,
+      left: ext.left ?? 0,
+      right: ext.right ?? 0,
+    };
+    const feetY = config.y + this.sprite.displayHeight / 2;
     this._collisionRect = new Phaser.Geom.Rectangle(
-      config.x - base.w / 2,
-      config.y + this.sprite.displayHeight / 2 - base.h,
-      base.w,
-      base.h,
+      config.x - base.w / 2 - this._collisionExtend.left,
+      feetY - base.h - this._collisionExtend.top,
+      base.w + this._collisionExtend.left + this._collisionExtend.right,
+      base.h + this._collisionExtend.top + this._collisionExtend.bottom,
     );
 
     // Proximity prompt — mirrors the terminal's "▼ E" floaty. Position
@@ -292,9 +310,14 @@ export class NpcAgent {
 
     // Collision rect follows the sprite's feet — updated in place so
     // the reference held by the scene's obstacles array stays current.
+    // Width/height are already baked with per-direction extensions;
+    // x/y place the rect so the un-extended core (42×24) still sits
+    // centered on the sprite's feet, with extensions radiating out.
     const feetY = this.sprite.y + this.sprite.displayHeight * 0.25;
-    this._collisionRect.x = this.sprite.x - this._collisionRect.width / 2;
-    this._collisionRect.y = feetY - this._collisionRect.height;
+    const baseW = 42;
+    const baseH = 24;
+    this._collisionRect.x = this.sprite.x - baseW / 2 - this._collisionExtend.left;
+    this._collisionRect.y = feetY - baseH - this._collisionExtend.top;
 
     // Prompt sits just above the NPC's visible head. The sprite's
     // canvas has transparent padding above the character, so using

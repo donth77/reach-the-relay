@@ -14,6 +14,19 @@ import {
 } from '../state/leaderboard';
 import { getUsername } from '../state/player';
 import { openUsernamePrompt, isUsernamePromptOpen } from '../util/usernamePrompt';
+import { createHoverButton, GOLD_BUTTON_STYLE } from '../util/button';
+
+// Module-scoped cache of the last score submission — so re-entering
+// RunCompleteScene (e.g. via BACK from the Leaderboard scene) doesn't
+// re-submit the same score and show a loading state again. Cleared
+// when the player leaves via CONTINUE (returnToTitle) so the next run
+// starts fresh.
+interface CachedSubmitResult {
+  score: number;
+  rank: number | null;
+  source: 'remote' | 'local';
+}
+let cachedSubmitResult: CachedSubmitResult | null = null;
 
 interface SceneData {
   outcome?: 'victory' | 'defeat';
@@ -100,7 +113,10 @@ export class RunCompleteScene extends Phaser.Scene {
       // Layout:
       //   left slot:  [ SUBMIT SCORE ] button  OR  "RANK #X" text
       //   right slot: [ LEADERBOARD ] button
-      const ROW_Y = height - 180;
+      // Nudged down so the submit/rank row isn't crammed right under
+      // the HP table — gives ~80 px of breathing room above it, and
+      // the gap below to CONTINUE shrinks to ~70 px correspondingly.
+      const ROW_Y = height - 140;
       const LEFT_X = width / 2 - 150;
       const RIGHT_X = width / 2 + 150;
 
@@ -116,55 +132,75 @@ export class RunCompleteScene extends Phaser.Scene {
         .setOrigin(0.5);
 
       // LEADERBOARD button — always visible on victory, right slot.
-      const leaderboardBtn = this.add
-        .text(RIGHT_X, ROW_Y, '[ LEADERBOARD ]', {
-          fontFamily: FONT,
-          fontSize: '24px',
-          color: '#ffdd55',
-          backgroundColor: '#3a3a1a',
-          padding: { x: 18, y: 8 },
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      leaderboardBtn.on('pointerup', () => {
-        this.scene.start('Leaderboard', {
-          initialFilter: run.route.id as LeaderboardRoute,
-          returnScene: 'Lobby',
-        });
-        endRun();
-        resetLobbyForNextRun();
+      // Return value unused; focus-cycle collection finds buttons by
+      // label text below.
+      createHoverButton(this, {
+        x: RIGHT_X,
+        y: ROW_Y,
+        label: '[ LEADERBOARD ]',
+        fontSize: '24px',
+        padding: { x: 18, y: 8 },
+        ...GOLD_BUTTON_STYLE,
+        onClick: () => {
+          // Keep the run state alive — BACK from the leaderboard
+          // should return to THIS victory screen so the player sees
+          // their score / rank / HP table again before choosing
+          // CONTINUE. `endRun` + `resetLobbyForNextRun` now fire only
+          // from the actual CONTINUE path (`returnToTitle`), not here.
+          this.scene.start('Leaderboard', {
+            initialFilter: run.route.id as LeaderboardRoute,
+            returnScene: 'RunComplete',
+            returnSceneData: {
+              outcome: this.outcome,
+              reason: this.reason,
+            },
+          });
+        },
       });
 
       if (getUsername()) {
-        rankText.setText('RANK  —');
-        void this.submitLeaderboardEntry(finalScore, rankText);
+        // On re-entry from Leaderboard BACK, skip the network round-trip
+        // and paint the rank we already resolved. Only submit fresh if
+        // no cache or the score somehow differs.
+        if (cachedSubmitResult && cachedSubmitResult.score === finalScore) {
+          const r = cachedSubmitResult;
+          if (r.rank !== null) {
+            const suffix = r.source === 'local' ? ' (local)' : '';
+            rankText.setText(`RANK  #${r.rank}${suffix}`);
+            rankText.setColor(r.source === 'local' ? '#ffbb66' : '#8aff8a');
+          } else {
+            rankText.setText('RANK  —');
+            rankText.setColor('#888');
+          }
+        } else {
+          rankText.setText('RANK  —');
+          void this.submitLeaderboardEntry(finalScore, rankText);
+        }
       } else {
         // No callsign — SUBMIT button in the left slot. Rank text hidden
         // until the player submits successfully.
         rankText.setVisible(false);
-        const submitBtn = this.add
-          .text(LEFT_X, ROW_Y, '[ SUBMIT SCORE ]', {
-            fontFamily: FONT,
-            fontSize: '24px',
-            color: '#ffdd55',
-            backgroundColor: '#3a3a1a',
-            padding: { x: 18, y: 8 },
-          })
-          .setOrigin(0.5)
-          .setInteractive({ useHandCursor: true });
-        submitBtn.on('pointerup', () => {
-          openUsernamePrompt(this, {
-            onConfirm: () => {
-              submitBtn.destroy();
-              rankText!.setVisible(true);
-              rankText!.setText('RANK  —');
-              rankText!.setColor('#8aa5cf');
-              void this.submitLeaderboardEntry(finalScore, rankText!);
-            },
-            onCancel: () => {
-              // No-op — the player chose to skip. Button stays for a retry.
-            },
-          });
+        const submitBtn = createHoverButton(this, {
+          x: LEFT_X,
+          y: ROW_Y,
+          label: '[ SUBMIT SCORE ]',
+          fontSize: '24px',
+          padding: { x: 18, y: 8 },
+          ...GOLD_BUTTON_STYLE,
+          onClick: () => {
+            openUsernamePrompt(this, {
+              onConfirm: () => {
+                submitBtn.destroy();
+                rankText!.setVisible(true);
+                rankText!.setText('RANK  —');
+                rankText!.setColor('#8aa5cf');
+                void this.submitLeaderboardEntry(finalScore, rankText!);
+              },
+              onCancel: () => {
+                // No-op — button stays for a retry.
+              },
+            });
+          },
         });
       }
     }
@@ -216,18 +252,121 @@ export class RunCompleteScene extends Phaser.Scene {
     // LEADERBOARD button — players reach the leaderboard from the Title
     // menu or the Lobby prop; the victory screen is focused on
     // "finalize this run, then move on".
-    const continueBtn = this.add
-      .text(width / 2, height - 70, '[ CONTINUE ]', {
-        fontFamily: FONT,
-        fontSize: '30px',
-        color: '#8aff8a',
-        backgroundColor: '#2a3a2a',
-        padding: { x: 28, y: 12 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    continueBtn.on('pointerup', () => this.returnToLobby());
-    this.input.keyboard?.once('keydown-SPACE', () => this.returnToLobby());
+    const continueBtn = createHoverButton(this, {
+      x: width / 2,
+      y: height - 70,
+      label: '[ CONTINUE ]',
+      fontSize: '30px',
+      padding: { x: 28, y: 12 },
+      onClick: () => this.returnToTitle(),
+    });
+
+    // Keyboard focus cycle — collect all on-screen buttons (order:
+    // left → right → continue) and draw a white border around the
+    // currently focused one. TAB / LEFT / RIGHT cycle; ENTER / SPACE
+    // activate. Makes the victory screen keyboard-complete while
+    // preserving the existing per-button pointer handlers.
+    type FocusableBtn = { text: Phaser.GameObjects.Text; activate: () => void };
+    const focusables: FocusableBtn[] = [];
+    // Only the `submitBtn` variant uses the `leaderboardBtn` rendered
+    // above; rebuild the focusable list from whichever buttons exist
+    // on the stage now.
+    if (this.outcome === 'victory') {
+      if (rankText && !getUsername()) {
+        // Submit button was rendered — find it (only interactive gold
+        // pill on the left slot). We added `submitBtn` above; pick it
+        // up via children lookup on the scene.
+      }
+    }
+    // Simpler: explicit references (already have `continueBtn`; rebuild
+    // the inline refs here).
+    // — collect interactive children in insertion order, filter to
+    // the two gold pills + continue.
+    const children = this.children.getAll() as Phaser.GameObjects.Text[];
+    for (const child of children) {
+      if (!(child instanceof Phaser.GameObjects.Text)) continue;
+      const t = child.text;
+      if (t === '[ LEADERBOARD ]') {
+        focusables.push({
+          text: child,
+          activate: () => child.emit('pointerup'),
+        });
+      } else if (t === '[ SUBMIT SCORE ]') {
+        focusables.push({
+          text: child,
+          activate: () => child.emit('pointerup'),
+        });
+      }
+    }
+    focusables.push({ text: continueBtn, activate: () => this.returnToTitle() });
+
+    // -1 = no focus (border hidden). Flips to a real index when the
+    // player hovers a button OR presses a cycle key. Hovering OUT
+    // clears back to -1 so the border never lingers once the mouse
+    // leaves its button.
+    let focusedIdx = -1;
+    const focusBorder = this.add.graphics();
+    const redrawFocusBorder = (): void => {
+      focusBorder.clear();
+      if (focusedIdx < 0) return;
+      const f = focusables[focusedIdx];
+      if (!f) return;
+      const b = f.text.getBounds();
+      const pad = 6;
+      focusBorder.lineStyle(3, 0xffffff, 0.9);
+      focusBorder.strokeRect(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
+    };
+    // CONTINUE is last in the focusables list; use it as the default
+    // first selection when the player starts keyboard-navigating.
+    const CONTINUE_IDX = focusables.length - 1;
+    const moveFocus = (delta: number): void => {
+      const n = focusables.length;
+      if (n === 0) return;
+      // First cycle key with no current focus: land on CONTINUE
+      // (the most common action on this screen). Delta is not
+      // applied — the player has to press the key again to cycle
+      // away. Subsequent presses wrap around the full list.
+      if (focusedIdx < 0) {
+        focusedIdx = CONTINUE_IDX;
+      } else {
+        focusedIdx = (focusedIdx + delta + n) % n;
+      }
+      redrawFocusBorder();
+    };
+    const activateFocused = (): void => {
+      // No focus yet → fall back to the primary CONTINUE action so
+      // Enter/Space still works as the "one-key finish the screen"
+      // shortcut without requiring the player to cycle first.
+      if (focusedIdx < 0) {
+        this.returnToTitle();
+        return;
+      }
+      const f = focusables[focusedIdx];
+      if (f) f.activate();
+    };
+    focusables.forEach((f, i) => {
+      f.text.on('pointerover', () => {
+        focusedIdx = i;
+        redrawFocusBorder();
+      });
+      f.text.on('pointerout', () => {
+        if (focusedIdx === i) {
+          focusedIdx = -1;
+          redrawFocusBorder();
+        }
+      });
+    });
+    this.input.keyboard?.on('keydown-TAB', (ev: KeyboardEvent) => {
+      ev.preventDefault?.();
+      moveFocus(ev.shiftKey ? -1 : 1);
+    });
+    this.input.keyboard?.on('keydown-LEFT', () => moveFocus(-1));
+    this.input.keyboard?.on('keydown-RIGHT', () => moveFocus(1));
+    this.input.keyboard?.on('keydown-A', () => moveFocus(-1));
+    this.input.keyboard?.on('keydown-D', () => moveFocus(1));
+    this.input.keyboard?.on('keydown-ENTER', activateFocused);
+    this.input.keyboard?.on('keydown-SPACE', activateFocused);
+    this.input.keyboard?.on('keydown-E', activateFocused);
 
     installPauseMenuEsc(this, {
       canAbandon: false,
@@ -262,6 +401,9 @@ export class RunCompleteScene extends Phaser.Scene {
       route: run.route.id as LeaderboardRoute,
       durationSec,
     });
+    // Cache so re-entering this scene from the leaderboard doesn't
+    // resubmit the same score.
+    cachedSubmitResult = { score, rank: result.rank, source: result.source };
     if (result.rank !== null) {
       const suffix = result.source === 'local' ? ' (local)' : '';
       rankText.setText(`RANK  #${result.rank}${suffix}`);
@@ -272,19 +414,18 @@ export class RunCompleteScene extends Phaser.Scene {
     }
   }
 
-  private returnToLobby(): void {
+  private returnToTitle(): void {
+    // Clear the submit cache so the next run starts with a fresh
+    // submit cycle (not showing the previous run's rank).
+    cachedSubmitResult = null;
     endRun();
-    // Keep the chosen leader across runs — player restarts from Title
-    // to re-pick. Recruits and last position reset via
-    // resetLobbyForNextRun so the next run starts with a fresh crew
-    // to assemble.
+    // Run's over — the player restarts from the Title screen so they
+    // can re-pick a leader / start fresh. Lobby would otherwise
+    // bounce to LeaderSelect on some state-race paths; sending
+    // straight to Title is the cleaner arc for "this run is done."
     resetLobbyForNextRun();
     // Force-stop every scene that could still be alive from the run
-    // just finished. scene.start('Lobby') would normally stop the
-    // calling RunComplete scene, but leaked peers (PartySelectTerminal
-    // paused, Journey still drawing, etc.) can keep rendering over
-    // the new Lobby. Explicit manager.stop calls kill the leftovers
-    // before we start Lobby fresh.
+    // just finished so they don't leak under the Title render.
     const sm = this.scene.manager;
     for (const key of [
       'PartySelectTerminal',
@@ -297,7 +438,7 @@ export class RunCompleteScene extends Phaser.Scene {
     ]) {
       if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
     }
-    this.scene.start('Lobby');
+    this.scene.start('Title');
   }
 
   /**

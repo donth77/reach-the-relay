@@ -187,23 +187,35 @@ export async function submitScore(entry: Omit<ScoreEntry, 'timestamp'>): Promise
 export async function fetchTopScores(opts: {
   route?: LeaderboardRoute | null;
   limit?: number;
+  // Bypass the remote call entirely and read localStorage. Used by the
+  // debug `L` test-trigger so seeded entries render even in builds
+  // with a Worker API configured.
+  localOnly?: boolean;
 }): Promise<{ entries: ScoreEntry[]; source: 'remote' | 'local' }> {
   const route = opts.route ?? null;
   const limit = opts.limit ?? 50;
+
+  const readLocalSlice = (): ScoreEntry[] => {
+    const all = readLocal();
+    const filtered = route ? all.filter((e) => e.route === route) : all;
+    filtered.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.durationSec - b.durationSec;
+    });
+    return filtered.slice(0, limit);
+  };
+
+  if (opts.localOnly) {
+    return { entries: readLocalSlice(), source: 'local' };
+  }
 
   const remote = await fetchRemote(route, limit);
   if (Array.isArray(remote)) {
     return { entries: remote, source: 'remote' };
   }
 
-  // Remote failure — fall back to local entries. Filter + sort + limit.
-  const all = readLocal();
-  const filtered = route ? all.filter((e) => e.route === route) : all;
-  filtered.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.durationSec - b.durationSec;
-  });
-  return { entries: filtered.slice(0, limit), source: 'local' };
+  // Remote failure — fall back to local entries.
+  return { entries: readLocalSlice(), source: 'local' };
 }
 
 /**

@@ -2823,8 +2823,10 @@ export class CombatScene extends Phaser.Scene {
           // blast. Snappy timing for regular ranged attacks (sentry
           // plasma bolt) opt-in via fastBolt.
           const travelDuration = fastBolt
-            ? // ~25% faster than the default heavy-bolt timing.
-              Math.max(165, Math.min(360, distance * 0.975))
+            ? // Snappy plasma-bolt timing — roughly half the speed of the
+              // boss shockwave, reads as a quick crack of fire rather
+              // than a weighty boss blast.
+              Math.max(120, Math.min(250, distance * 0.7))
             : Math.max(220, Math.min(480, distance * 1.3));
           const glow = this.add.circle(startX, startY, 14, color, 0.35).setDepth(99999);
           const core = this.add.circle(startX, startY, 6, color, 1).setDepth(99999);

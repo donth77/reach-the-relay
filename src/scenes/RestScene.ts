@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { CLASSES } from '../data/classes';
 import { getRun, VIP_MAX_HP, refillAbilityUsesOnRest } from '../state/run';
 import { FONT } from '../util/ui';
+import { createHoverButton } from '../util/button';
 import { installPauseMenuEsc } from '../util/pauseMenu';
 import { ITEMS, ITEM_ORDER } from '../data/items';
 
@@ -112,9 +113,18 @@ export class RestScene extends Phaser.Scene {
     // HP delta aligned under the HP column and the MP delta aligned under
     // the MP column. Putting deltas on their own row guarantees no
     // overlap regardless of text widths.
-    const nameColX = width / 2 - 500;
-    const hpColX = width / 2 - 160;
-    const mpColX = width / 2 + 200;
+    // Table span: NAME text starts at nameColX and the MP column's text
+    // ends ~125 px past mpColX ("MP 30/30" at 28 px Silkscreen). The
+    // three offsets below are tuned so the whole visible row centers
+    // on the canvas midline (width/2) — previously the layout was
+    // pinned to nameColX = width/2-500 which sat ~170 px left of
+    // center with a dead right margin.
+    const nameColX = width / 2 - 332;
+    const hpColX = width / 2 + 8;
+    // MP column sits directly after the HP value (widest is 3/3 digits,
+    // ~160 px at 28 px Silkscreen) so there's no empty gap between the
+    // two stats.
+    const mpColX = hpColX + 200;
     const ROW1_TO_ROW2 = 28; // vertical gap from name/stat row to delta row
     const BLOCK_SPACING = 60; // vertical space between character blocks
     let y = 280;
@@ -218,23 +228,27 @@ export class RestScene extends Phaser.Scene {
         .setOrigin(1, 0.5);
     }
 
-    const btn = this.add
-      .text(width / 2, height - 100, '[ Continue ]', {
-        fontFamily: FONT,
-        fontSize: '32px',
-        color: '#8aff8a',
-        backgroundColor: '#2a3a2a',
-        padding: { x: 24, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-
     // Rest continues into Journey (marker animates from the rest stop
     // onward to the next encounter) before landing in Combat. Pass
     // `fromRest: true` so Journey doesn't re-detect this transition as
     // a rest-stop journey and loop back to the Rest scene.
-    const advance = () => this.scene.start('Journey', { fromRest: true });
-    btn.on('pointerup', advance);
+    // `advanced` flag guards against rapid-fire keypresses queuing
+    // multiple scene starts mid-transition.
+    let advanced = false;
+    const advance = (): void => {
+      if (advanced) return;
+      advanced = true;
+      this.scene.start('Journey', { fromRest: true });
+    };
+    createHoverButton(this, {
+      x: width / 2,
+      y: height - 100,
+      label: '[ Continue ]',
+      fontSize: '32px',
+      onClick: advance,
+    });
+    this.input.keyboard?.once('keydown-E', advance);
+    this.input.keyboard?.once('keydown-ENTER', advance);
     this.input.keyboard?.once('keydown-SPACE', advance);
 
     installPauseMenuEsc(this);

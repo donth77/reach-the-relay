@@ -3,7 +3,7 @@ import type { ClassDef } from '../data/classes';
 import type { EnemyDef } from '../data/enemies';
 
 export const ATB_MAX = 100;
-export const ATB_RATE = 10;
+export const ATB_RATE = 9;
 
 export const PANEL_HEIGHT = 200;
 export const PANEL_MARGIN = 10;

@@ -396,16 +396,19 @@ export class LobbyScene extends Phaser.Scene {
     );
     // Collision covers the board + cabinet base. Extended south so
     // the player stops a few px below the cabinet — reads as
-    // "reading the board".
+    // "reading the board". Extended up + sideways so the full visible
+    // silhouette blocks the player instead of just the cabinet base.
     const RELAYBOARD_COLL_W = 70;
     const RELAYBOARD_COLL_H = 80;
     const RELAYBOARD_COLL_EXTEND_DOWN = 15;
+    const RELAYBOARD_COLL_EXTEND_UP = 40;
+    const RELAYBOARD_COLL_EXTEND_SIDES = 20;
     this.obstacles.push(
       new Phaser.Geom.Rectangle(
-        relayBoardX - RELAYBOARD_COLL_W / 2,
-        relayBoardFeetY - RELAYBOARD_COLL_H,
-        RELAYBOARD_COLL_W,
-        RELAYBOARD_COLL_H + RELAYBOARD_COLL_EXTEND_DOWN,
+        relayBoardX - RELAYBOARD_COLL_W / 2 - RELAYBOARD_COLL_EXTEND_SIDES,
+        relayBoardFeetY - RELAYBOARD_COLL_H - RELAYBOARD_COLL_EXTEND_UP,
+        RELAYBOARD_COLL_W + RELAYBOARD_COLL_EXTEND_SIDES * 2,
+        RELAYBOARD_COLL_H + RELAYBOARD_COLL_EXTEND_UP + RELAYBOARD_COLL_EXTEND_DOWN,
       ),
     );
     this.relayBoardInteractPos = new Phaser.Math.Vector2(relayBoardX, relayBoardFeetY + 20);
@@ -1127,8 +1130,14 @@ export class LobbyScene extends Phaser.Scene {
     const collW = Math.round(120 * scale);
     const collH = Math.round(70 * scale);
     const extendDown = 6;
+    const extendUp = 20;
     this.obstacles.push(
-      new Phaser.Geom.Rectangle(feetX - collW / 2, feetY - collH, collW, collH + extendDown),
+      new Phaser.Geom.Rectangle(
+        feetX - collW / 2,
+        feetY - collH - extendUp,
+        collW,
+        collH + extendUp + extendDown,
+      ),
     );
   }
 
@@ -1275,6 +1284,7 @@ export class LobbyScene extends Phaser.Scene {
       recruitable: false,
       displayName: 'DR. VEY',
       customStatLine: `HP 35`,
+      collisionExtend: { top: 20, bottom: 20 },
       customLore:
         'Scientist. Two months of field observations on AI patrol pattern shifts — the data the survivor network has been waiting on.',
       greetingLines: [
@@ -1329,6 +1339,12 @@ export class LobbyScene extends Phaser.Scene {
         x: 200,
         y: 560,
         initialFacing: 'west',
+        // Workbench juts out east of the scavenger's feet — extend the
+        // collision rightward so the player can't walk through the
+        // bench's east edge while approaching from the doorway. Small
+        // top/bottom cushion so the player can't clip into the anim's
+        // vertical silhouette either.
+        collisionExtend: { top: 10, bottom: 10, right: 18 },
         // Workbench depth is now set to its TOP edge (see spawnWorkbench)
         // so natural y-sort handles both the scavenger AND the player
         // rendering in front of the bench. No depthOverride needed.
@@ -1364,6 +1380,11 @@ export class LobbyScene extends Phaser.Scene {
         y: 430,
         initialFacing: 'west',
         recruitable: true,
+        // Chair + desk + laptop are baked into the typing animation
+        // and extend well past the netrunner's feet in every direction —
+        // push collision outward on all sides so the player can't clip
+        // through any part of the desk setup.
+        collisionExtend: { top: 20, bottom: 16, left: 20, right: 20 },
         idleAnim: {
           textureKeyPrefix: 'netrunner-typing-west',
           frameCount: 9,

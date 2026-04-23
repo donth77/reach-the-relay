@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { FONT } from '../util/ui';
+import { createHoverButton } from '../util/button';
 import { CLASSES } from '../data/classes';
 import {
   _seedLocalForTest,
@@ -42,6 +43,11 @@ interface SceneData {
   returnScene?: string;
   // Optional scene data to pass back to the return scene.
   returnSceneData?: Record<string, unknown>;
+  // Debug: bypass the remote fetch and read directly from localStorage.
+  // Used by `startTest()` so the seeded entries show up even when a
+  // Worker API is configured but returns an empty board (e.g. freshly
+  // deployed environment).
+  useLocalOnly?: boolean;
 }
 
 // Entries per page. Sized to fit comfortably above the pagination controls
@@ -52,6 +58,7 @@ export class LeaderboardScene extends Phaser.Scene {
   private activeFilter: FilterKey = 'all';
   private returnScene = 'Title';
   private returnSceneData: Record<string, unknown> | undefined = undefined;
+  private useLocalOnly = false;
   // Container for the current table rendering — cleared and re-rendered
   // whenever the active filter changes OR the page changes.
   private tableContainer?: Phaser.GameObjects.Container;
@@ -75,6 +82,7 @@ export class LeaderboardScene extends Phaser.Scene {
     this.activeFilter = data?.initialFilter ?? 'all';
     this.returnScene = data?.returnScene ?? 'Title';
     this.returnSceneData = data?.returnSceneData;
+    this.useLocalOnly = data?.useLocalOnly === true;
   }
 
   create(): void {
@@ -110,10 +118,15 @@ export class LeaderboardScene extends Phaser.Scene {
         if (this.activeFilter === tab.key) return;
         this.activeFilter = tab.key;
         // Re-render the whole scene (cheap — just a table swap).
+        // Forward `useLocalOnly` so the debug-seeded board keeps
+        // showing seeded entries after a route-tab switch; without
+        // this, the restart reverts to remote-first (empty API →
+        // blank board).
         this.scene.restart({
           initialFilter: this.activeFilter,
           returnScene: this.returnScene,
           returnSceneData: this.returnSceneData,
+          useLocalOnly: this.useLocalOnly,
         });
       });
     });
@@ -156,33 +169,32 @@ export class LeaderboardScene extends Phaser.Scene {
     // Async fetch, render when ready.
     this.loadAndRender();
 
-    // Back button — hover state lightens the label + background so it
-    // clearly reads as clickable.
-    const BTN_COLOR = '#8aff8a';
-    const BTN_COLOR_HOVER = '#ffffff';
-    const BTN_BG = '#2a3a2a';
-    const BTN_BG_HOVER = '#3f5a3f';
-    const btn = this.add
-      .text(width / 2, height - 60, '[ BACK ]', {
-        fontFamily: FONT,
-        fontSize: '28px',
-        color: BTN_COLOR,
-        backgroundColor: BTN_BG,
-        padding: { x: 20, y: 8 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    btn.on('pointerover', () => {
-      btn.setColor(BTN_COLOR_HOVER);
-      btn.setBackgroundColor(BTN_BG_HOVER);
+    // Back button — see `util/button.ts` for hover/chrome defaults.
+    createHoverButton(this, {
+      x: width / 2,
+      y: height - 45,
+      label: '[ BACK ]',
+      fontSize: '28px',
+      padding: { x: 24, y: 10 },
+      onClick: () => this.returnBack(),
     });
-    btn.on('pointerout', () => {
-      btn.setColor(BTN_COLOR);
-      btn.setBackgroundColor(BTN_BG);
-    });
-    btn.on('pointerup', () => this.returnBack());
-    this.input.keyboard?.once('keydown-ESC', () => this.returnBack());
-    this.input.keyboard?.once('keydown-SPACE', () => this.returnBack());
+    // BACK is the only action on the leaderboard, so make every
+    // reasonable confirm/cancel key route to it. `once` guards against
+    // a double-scene-start if the player mashes the key during the
+    // scene transition.
+    const backOnce = (() => {
+      let fired = false;
+      return (): void => {
+        if (fired) return;
+        fired = true;
+        this.returnBack();
+      };
+    })();
+    this.input.keyboard?.on('keydown-ESC', backOnce);
+    this.input.keyboard?.on('keydown-SPACE', backOnce);
+    this.input.keyboard?.on('keydown-ENTER', backOnce);
+    this.input.keyboard?.on('keydown-E', backOnce);
+    this.input.keyboard?.on('keydown-BACKSPACE', backOnce);
 
     // Arrow-key pagination — works whenever the board has more than one page.
     this.input.keyboard?.on('keydown-LEFT', () => this.changePage(-1));
@@ -211,7 +223,11 @@ export class LeaderboardScene extends Phaser.Scene {
     const route = this.activeFilter === 'all' ? null : this.activeFilter;
     // Fetch up to 100 entries so we have enough to paginate through.
     // Worker / local store both clamp to this anyway.
-    const { entries, source } = await fetchTopScores({ route, limit: 100 });
+    const { entries, source } = await fetchTopScores({
+      route,
+      limit: 100,
+      localOnly: this.useLocalOnly,
+    });
     this.allEntries = entries;
     this.currentPage = 1;
 
@@ -315,17 +331,24 @@ export class LeaderboardScene extends Phaser.Scene {
     const totalPages = Math.max(1, Math.ceil(this.allEntries.length / PAGE_SIZE));
     if (totalPages <= 1) return; // No controls when not needed.
 
-    const { width, height } = this.scale;
+    const { width } = this.scale;
     const centerX = width / 2;
-    // Controls sit below the last possible table row (240 + 14*26 = 604),
-    // above the BACK button at y=height-60.
-    const controlY = height - 110;
+    // Controls sit below the last possible table row (240 + 14*26 = 604)
+    // and above the BACK button (now at y=height-35=685). y=620 leaves
+    // ~16 px of breathing room above and ~50 px below to the BACK
+    // button's pill — both clear.
+    const controlY = 620;
 
     const canPrev = this.currentPage > 1;
     const canNext = this.currentPage < totalPages;
 
+    // Increased horizontal offset (120 → 170) so PREV / NEXT sit
+    // further from the "PAGE X OF Y" label — gives the label
+    // comfortable breathing room on both sides.
+    const arrowOffsetX = 170;
+
     const prev = this.add
-      .text(centerX - 120, controlY, '< PREV', {
+      .text(centerX - arrowOffsetX, controlY, '< PREV', {
         fontFamily: FONT,
         fontSize: '20px',
         color: canPrev ? '#8aff8a' : '#444',
@@ -343,7 +366,7 @@ export class LeaderboardScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const next = this.add
-      .text(centerX + 120, controlY, 'NEXT >', {
+      .text(centerX + arrowOffsetX, controlY, 'NEXT >', {
         fontFamily: FONT,
         fontSize: '20px',
         color: canNext ? '#8aff8a' : '#444',
@@ -442,6 +465,6 @@ export class LeaderboardScene extends Phaser.Scene {
     }
 
     _seedLocalForTest(entries);
-    caller.scene.start('Leaderboard', { returnScene: 'Title' });
+    caller.scene.start('Leaderboard', { returnScene: 'Title', useLocalOnly: true });
   }
 }
