@@ -1569,68 +1569,61 @@ export class LobbyScene extends Phaser.Scene {
     const hasReturn = !!this.portalRefUrl;
     const midX = (DOORWAY_X_LEFT + DOORWAY_X_RIGHT) / 2;
 
-    // When both labels are shown the doorway is too narrow (~118px) for
-    // them to sit side-by-side, so stack vertically: VIBE JAM higher up,
-    // RETURN just above the doorway. The half-doorway X-centers keep the
-    // left/right "this side goes here" cue.
-    const STACK_OFFSET = 28;
-
-    // Exit portal (Vibe Jam) — cyan/magenta pulse.
-    const exitLeftX = hasReturn ? midX : DOORWAY_X_LEFT;
-    this.paintPortalZone(
-      exitLeftX,
-      DOORWAY_Y_TOP,
-      DOORWAY_X_RIGHT - exitLeftX,
-      DOORWAY_Y_BOTTOM - DOORWAY_Y_TOP,
-      0xff66ff,
-      'VIBE JAM ▼',
-      hasReturn ? STACK_OFFSET : 0,
-    );
-
     if (hasReturn) {
-      this.paintPortalZone(
-        DOORWAY_X_LEFT,
-        DOORWAY_Y_TOP,
-        midX - DOORWAY_X_LEFT,
-        DOORWAY_Y_BOTTOM - DOORWAY_Y_TOP,
-        0x66ffcc,
-        'RETURN ▼',
-        0,
+      // Two-portal layout: RETURN on the left of the doorway midline,
+      // VIBE JAM on the right, chevrons on their inner edges so they
+      // both visually "point down" into their respective half. A single
+      // vertical line down the middle of the doorway opening shows the
+      // boundary between portals.
+      const divider = this.add.graphics().setDepth(99996);
+      divider.lineStyle(2, 0xffffff, 0.7);
+      divider.lineBetween(midX, DOORWAY_Y_TOP, midX, 720);
+
+      this.paintPortalLabel(midX - 8, DOORWAY_Y_TOP - 8, 'RETURN ▼', 0x66ffcc, 1);
+      this.paintPortalLabel(midX + 8, DOORWAY_Y_TOP - 8, '▼ VIBE JAM', 0xff66ff, 0);
+    } else {
+      // Single-portal layout: classic centered VIBE JAM ▼ above the doorway.
+      this.paintPortalLabel(
+        (DOORWAY_X_LEFT + DOORWAY_X_RIGHT) / 2,
+        DOORWAY_Y_TOP - 8,
+        'VIBE JAM ▼',
+        0xff66ff,
+        0.5,
       );
     }
   }
 
   /**
-   * Paint a single portal zone — label-only. The doorway opening in the
-   * bg art is already the visual cue; a floating label above it tells
-   * the player what walking through it does. Pulses on alpha so it
-   * reads as active without painting over the floor. Trigger logic
-   * lives in update().
+   * Paint a single portal label above the doorway. The doorway opening in
+   * the bg art is the visual cue for the portal itself; this floating label
+   * tells the player what walking through it does. Pulses on Y so it reads
+   * as active without painting over the floor. Trigger logic lives in
+   * update().
+   *
+   * `originX`: 0 = left-anchor (label extends right of x), 0.5 = centered,
+   * 1 = right-anchor (label extends left of x). Use 0/1 to flank a midline.
    */
-  private paintPortalZone(
+  private paintPortalLabel(
     x: number,
     y: number,
-    w: number,
-    _h: number,
-    colorHex: number,
     label: string,
-    extraYOffset = 0,
+    colorHex: number,
+    originX: number,
   ): void {
-    const labelY = y - 8 - extraYOffset;
     const text = this.add
-      .text(x + w / 2, labelY, label, {
+      .text(x, y, label, {
         fontFamily: FONT,
         fontSize: '22px',
         color: '#ffffff',
         stroke: `#${colorHex.toString(16).padStart(6, '0')}`,
         strokeThickness: 5,
       })
-      .setOrigin(0.5, 1)
+      .setOrigin(originX, 1)
       .setDepth(99997);
     // Matches the terminal's "▼ E" prompt bob — gentle 4px ping-pong.
     this.tweens.add({
       targets: text,
-      y: labelY - 4,
+      y: y - 4,
       duration: 500,
       yoyo: true,
       repeat: -1,
