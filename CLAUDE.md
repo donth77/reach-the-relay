@@ -291,6 +291,9 @@ npm run lint                        # eslint src
 npm run format                      # prettier --write .
 npm run format:check                # prettier --check .
 npm run sim                         # headless combat sim → markdown report (see src/sim/)
+
+SOURCEMAP=1 npm run build           # re-enables source maps in the prod bundle
+                                    # (off by default — strips ~12 MB of TS source from dist/)
 ```
 
 Typecheck + eslint + prettier + a headless combat simulator are the quality gates — there is no unit-test suite.
@@ -305,7 +308,7 @@ Typecheck + eslint + prettier + a headless combat simulator are the quality gate
 
 ## User profile
 
-See memory files (`/Users/tomdonohue/.claude/projects/-Users-tomdonohue-projects-vibejam2026/memory/`). Key points:
+See memory files (in `~/.claude/projects/<project-slug>/memory/`). Key points:
 
 - Jam goal is participation, not winning — but polish matters to user
 - "A few px" means additive `+N` pixels, never a scale-factor change
