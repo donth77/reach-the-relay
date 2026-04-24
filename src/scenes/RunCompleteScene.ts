@@ -55,6 +55,27 @@ export class RunCompleteScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Force-stop every other run-state scene that might still be alive.
+    // RunComplete is a terminal "this run is over" screen — anything else
+    // lingering (e.g. the paused Lobby left under PartySelectTerminal,
+    // a combat scene that called abortRun, etc.) is a leak. Skipped on
+    // re-entry from Leaderboard since nothing should be alive then anyway.
+    const sm = this.scene.manager;
+    for (const key of [
+      'Lobby',
+      'LeaderSelect',
+      'PartySelect',
+      'PartySelectTerminal',
+      'Route',
+      'RouteMap',
+      'Journey',
+      'Combat',
+      'Rest',
+      'RelayCutscene',
+    ]) {
+      if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
+    }
+
     const { width, height } = this.scale;
     const run = getRun();
 

@@ -207,6 +207,8 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
           'Journey',
           'Rest',
           'RunComplete',
+          'RelayCutscene',
+          'Leaderboard',
         ]) {
           if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
         }
@@ -229,6 +231,29 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
     activate: () => {
       playSfx(scene, 'sfx-menu-confirm', 0.4);
       closePauseMenu();
+      // Force-stop every other scene that might be active, paused, or
+      // sleeping. The route-pick flow leaves Lobby paused under
+      // PartySelectTerminal / RouteMap; without an explicit teardown
+      // those linger and render under TitleScene, and their audio
+      // keeps playing alongside the title theme.
+      const sm = scene.scene.manager;
+      for (const key of [
+        'Lobby',
+        'LeaderSelect',
+        'PartySelect',
+        'PartySelectTerminal',
+        'Route',
+        'RouteMap',
+        'Journey',
+        'Combat',
+        'Rest',
+        'RunComplete',
+        'RelayCutscene',
+        'Leaderboard',
+      ]) {
+        if (key === titleKey) continue;
+        if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
+      }
       scene.scene.start(titleKey);
     },
   });
