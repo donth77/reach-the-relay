@@ -110,6 +110,22 @@ worker/                           Cloudflare Worker + D1 leaderboard backend (se
 
 ### Scenes
 
+High-level flow:
+
+```
+Boot → Title → LeaderSelect → Lobby ⇄ PartySelectTerminal* → RouteMap
+                                ↓                              ↓
+                          (exit portal)                     Journey ⇄ Combat ⇄ Rest
+                                                              ↓
+                                               (victory) RelayCutscene
+                                                              ↓
+                                                          RunComplete → Title
+```
+
+- `*` PartySelectTerminal launches as a parallel scene over a *paused* Lobby (not a swap) so player position / NPC patrol state / lobby music survive the round-trip. RouteMap → BACK returns to a fresh Terminal with the same paused Lobby still beneath it (preserved via the `headingToRouteMap` flag in PartySelectTerminalScene's SHUTDOWN handler).
+- `Boot` immediately launches `BackgroundLoad` (tier 2a, lobby assets) which then launches `CombatLoad` (tier 2b, combat assets). Loaders stream in parallel with the player on Title / LeaderSelect — `LeaderSelectScene.confirmLeader` gates its Lobby transition on `assets:lobby-loaded`.
+- Hard-transitions (Abandon → Lobby, Return-to-title, RunComplete entry) call `stopOtherScenes(sm, except?)` from `util/scenes.ts` to sweep any leaked paused scenes — RunComplete is a terminal screen, no other run-state scene should be alive while it's shown.
+
 - Every scene uses `this.cameras.main.setBackgroundColor(...)` for its base color
 - Scene transitions via `this.scene.start('SceneKey', data)`; state persists via `state/run.ts` singleton
 - The unit model is a plain `Unit` interface in `src/combat/types.ts` (not ECS), imported by `CombatScene`
