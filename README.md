@@ -14,15 +14,26 @@ A turn-based RPG set in the ruins of an AI apocalypse, built for **Vibe Jam 2026
 
 ---
 
-## What it is
+## What is this?
 
 Pick a leader. Recruit a crew of three from the Greenhouse commune. Choose a route. Escort Dr. Vey through a chain of ATB combat encounters — and the rest stops between them — to the Relay tower.
 
-- **Greenhouse** — walkable top-down lobby. Recruit by talking to NPCs (E / Enter / Space / click) or skip the wandering and use the terminal.
-- **Routes** — three difficulty tiers, with encounter counts + enemy compositions sampled per run.
-- **Combat** — SNES-style Active Time Battle. Party on the right, enemies on the left, VIP in the back. Gauges fill, then your action menu opens.
-- **Rest stops** — partial heal between encounters, full heal before bosses, refill of per-rest abilities.
-- **Score** — based on how intact your party + VIP arrives at the Relay.
+## Features
+
+- Five playable classes — Vanguard, Netrunner, Medic, Scavenger, Cybermonk — each with unique abilities, elemental attacks, and limited-use specials
+- Three routes across three difficulty tiers, with the "Dead Substation" route ending in a boss fight against the **Wreckwarden**
+- ATB combat with elemental vulnerabilities (🔥 thermal / ❄ coolant / ⚡ surge), criticals, and ability targeting
+- Walkable lobby — recruit survivors, study the map, plan your run
+- Rest stops that replenish abilities and patch up your crew
+- Global leaderboard — submit a callsign or play anonymously
+
+## Controls
+
+- **Arrow keys / WASD** — move
+- **E / Enter / Space** — interact, confirm
+- **ESC** — pause menu
+- **Mouse** — click targets, menus, items
+- **Mobile** — touch controls with on-screen buttons (landscape required)
 
 ## Classes
 
