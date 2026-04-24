@@ -86,6 +86,7 @@ src/
     headCrop.ts                   per-class face-crop rects for compact portraits (HEAD_CROP_BY_CLASS)
     bag.ts                        grab-bag RNG — shuffles a pool, cycles without repeats
     portal.ts                     Vibe Jam 2026 webring integration (entry detection + exit-URL builder)
+    scenes.ts                     `stopOtherScenes(sm, except?)` — sweeps every active/paused/sleeping non-boot scene; used at hard-transition points (Abandon → Lobby, Return-to-title, RunComplete entry) to prevent leaked paused scenes
     rexGlobal.ts                  side-effect import — exposes Phaser as window.Phaser before rex-plugins load
 public/
   assets/
@@ -171,8 +172,8 @@ worker/                           Cloudflare Worker + D1 leaderboard backend (se
 - **Pre-run state lives in `state/lobby.ts`** — leader id, recruited set, last player pose. Survives LeaderSelect → Lobby → PartySelectTerminal round-trips so the player doesn't snap back to spawn.
 - **`PartySelectTerminalScene` pauses (not stops) LobbyScene** — so NPC patrol state, player position, and music survive intact across the overlay
 - `pauseMenu.ts` is the shared ESC menu for non-combat scenes. Scenes call `installPauseMenuEsc(this, { shouldBlockEsc: () => ... })` — the predicate blocks ESC from opening the menu when another modal (dialogue, map, briefing) owns the key.
-- **Vibe Jam webring** (`util/portal.ts`): `?portal=true` query param skips Title/LeaderSelect/PartySelect and drops the player straight into Lobby with a default party (Vanguard leader + Medic + Scavenger). An exit portal prop in the Lobby redirects to `vibejam.cc/portal/2026` with identity query params. `?username=<name>` is ingested silently on boot by `ingestUrlUsername()` (see `state/player.ts`) so portal visitors never see the callsign prompt.
-- **`L` key is registered per-scene.** Currently only in CombatScene — if you want log-copy in another scene, register it explicitly. Collision-debug toggle (`` ` `` backtick on Lobby, mounted from `main.ts`) is independent.
+- **Vibe Jam webring** (`util/portal.ts`): `?portal=true` query param skips Title/LeaderSelect/PartySelect and drops the player straight into Lobby with a default party (Vanguard leader + Medic + Netrunner = Kael + Nico + Echo). The pre-Phaser splash overlay is removed inline in `BootScene` on the portal branch (Title normally owns its removal). An exit portal prop in the Lobby redirects to `vibejam.cc/portal/2026` with identity query params; if the player arrived with `?ref=<url>`, a second RETURN portal renders alongside it on the doorway, separated by a vertical divider line. `?username=<name>` is ingested silently on boot by `ingestUrlUsername()` (see `state/player.ts`) so portal visitors never see the callsign prompt.
+- **`L` key is registered per-scene.** Currently only in CombatScene — if you want log-copy in another scene, register it explicitly. Collision-debug toggle is a DOM button mounted globally from `main.ts` (no keybind); scenes that draw the walkable polygon subscribe via `onDebugCollisionChange` in `util/logger.ts`.
 
 ### Combat flow gotchas
 

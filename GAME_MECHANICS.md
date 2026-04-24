@@ -157,11 +157,11 @@ Stored in a shared party inventory (`RunState.inventory`). Use via any party mem
 
 ### Starting inventory per route
 
-| Route          | Stimpak | Power Cell | Adrenaline | Smoke |
-| -------------- | ------- | ---------- | ---------- | ----- |
-| Long Highway   | 3       | 2          | 1          | 1     |
-| Transit Line   | 2       | 1          | 1          | 0     |
-| Direct Line    | 1       | 1          | 0          | 0     |
+| Route              | Stimpak | Power Cell | Adrenaline | Smoke |
+| ------------------ | ------- | ---------- | ---------- | ----- |
+| The Long Highway   | 3       | 2          | 1          | 1     |
+| Hollow Atrium Mall | 2       | 1          | 1          | 0     |
+| Dead Substation    | 1       | 1          | 0          | 0     |
 
 ---
 
@@ -169,13 +169,13 @@ Stored in a shared party inventory (`RunState.inventory`). Use via any party mem
 
 Three routes of increasing difficulty. Encounter counts are sampled per run from pools; specific compositions vary between runs.
 
-| Route        | Difficulty | Encounters          | Rest stops  | Background theme       |
-| ------------ | ---------- | ------------------- | ----------- | ---------------------- |
-| Long Highway | easy       | 5–6 (random pool)   | 2 (after 1, 3) | Overgrown highway      |
-| Transit Line | medium     | 3–4 (random pool)   | 1–2 (3-enc: after 1 · 4-enc: after 0 and 2) | Hollow shopping atrium |
-| Direct Line  | hard       | 2 or 3 (two variants) | 1 (always before the boss) | Dead substation → boss arena |
+| Route              | Difficulty | Encounters            | Rest stops                                  | Background theme             |
+| ------------------ | ---------- | --------------------- | ------------------------------------------- | ---------------------------- |
+| The Long Highway   | easy       | 5–6 (random pool)     | 2 (after 1, 3)                              | Overgrown highway            |
+| Hollow Atrium Mall | medium     | 3–4 (random pool)     | 1–2 (3-enc: after 1 · 4-enc: after 0 and 2) | Hollow shopping atrium       |
+| Dead Substation    | hard       | 2 or 3 (two variants) | 1 (always before the boss)                  | Dead substation → boss arena |
 
-### Direct Line variants
+### Dead Substation variants
 
 Picked 50/50 at run start. Both end with the Wreckwarden boss in the substation arena.
 

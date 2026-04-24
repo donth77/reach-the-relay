@@ -6,6 +6,7 @@ import { FONT } from '../util/ui';
 import { stopAllMusic } from '../util/audio';
 import { stopMusic, playMusicPool } from '../util/music';
 import { installPauseMenuEsc } from '../util/pauseMenu';
+import { stopOtherScenes } from '../util/scenes';
 import { resetLobbyForNextRun } from '../state/lobby';
 import {
   submitScore,
@@ -60,21 +61,7 @@ export class RunCompleteScene extends Phaser.Scene {
     // lingering (e.g. the paused Lobby left under PartySelectTerminal,
     // a combat scene that called abortRun, etc.) is a leak. Skipped on
     // re-entry from Leaderboard since nothing should be alive then anyway.
-    const sm = this.scene.manager;
-    for (const key of [
-      'Lobby',
-      'LeaderSelect',
-      'PartySelect',
-      'PartySelectTerminal',
-      'Route',
-      'RouteMap',
-      'Journey',
-      'Combat',
-      'Rest',
-      'RelayCutscene',
-    ]) {
-      if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
-    }
+    stopOtherScenes(this.scene.manager, ['RunComplete']);
 
     const { width, height } = this.scale;
     const run = getRun();
@@ -627,18 +614,7 @@ export class RunCompleteScene extends Phaser.Scene {
     resetLobbyForNextRun();
     // Force-stop every scene that could still be alive from the run
     // just finished so they don't leak under the Title render.
-    const sm = this.scene.manager;
-    for (const key of [
-      'PartySelectTerminal',
-      'Combat',
-      'Route',
-      'RouteMap',
-      'Journey',
-      'Rest',
-      'Lobby',
-    ]) {
-      if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
-    }
+    stopOtherScenes(this.scene.manager);
     this.scene.start('Title');
   }
 

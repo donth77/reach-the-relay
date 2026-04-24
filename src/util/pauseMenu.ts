@@ -4,6 +4,7 @@ import { resetLobbyForNextRun } from '../state/lobby';
 import { FONT, isTouchDevice } from './ui';
 import { playSfx } from './audio';
 import { buildAudioSettingsPanel } from './audioSettingsPanel';
+import { stopOtherScenes } from './scenes';
 
 /**
  * Shared ESC menu for non-title, non-combat scenes. CombatScene still has its
@@ -198,20 +199,8 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
       ((): void => {
         endRun();
         resetLobbyForNextRun();
-        const sm = scene.scene.manager;
-        for (const key of [
-          'PartySelectTerminal',
-          'Combat',
-          'Route',
-          'RouteMap',
-          'Journey',
-          'Rest',
-          'RunComplete',
-          'RelayCutscene',
-          'Leaderboard',
-        ]) {
-          if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
-        }
+        // We're heading to Lobby — keep it alive, sweep everything else.
+        stopOtherScenes(scene.scene.manager, ['Lobby']);
         scene.scene.start('Lobby');
       });
     rowSpecs.push({
@@ -236,24 +225,7 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
       // PartySelectTerminal / RouteMap; without an explicit teardown
       // those linger and render under TitleScene, and their audio
       // keeps playing alongside the title theme.
-      const sm = scene.scene.manager;
-      for (const key of [
-        'Lobby',
-        'LeaderSelect',
-        'PartySelect',
-        'PartySelectTerminal',
-        'Route',
-        'RouteMap',
-        'Journey',
-        'Combat',
-        'Rest',
-        'RunComplete',
-        'RelayCutscene',
-        'Leaderboard',
-      ]) {
-        if (key === titleKey) continue;
-        if (sm.isActive(key) || sm.isPaused(key) || sm.isSleeping(key)) sm.stop(key);
-      }
+      stopOtherScenes(scene.scene.manager, [titleKey]);
       scene.scene.start(titleKey);
     },
   });
