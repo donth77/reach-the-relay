@@ -9,6 +9,12 @@ import { playMusicPool } from '../util/music';
 import { playSfx } from '../util/audio';
 import { buildAudioSettingsPanel } from '../util/audioSettingsPanel';
 import { getAtbSpeed } from '../util/combatSettings';
+import {
+  canFullscreen,
+  isFullscreenActive,
+  isIosBrowser,
+  isStandalonePWA,
+} from '../util/fullscreen';
 import { drawFromBag } from '../util/bag';
 import { FONT, isTouchDevice } from '../util/ui';
 import {
@@ -4005,51 +4011,95 @@ export class CombatScene extends Phaser.Scene {
       return { text: t, activate, ...palette };
     };
 
-    const resume = mkBtn(
-      height / 2 - 70,
-      '[ RESUME ]',
-      '28px',
+    // Build the button list first, then position them with auto-centered
+    // spacing so the stack stays balanced regardless of which optional
+    // entries (FULLSCREEN on capable mobile browsers) are present.
+    interface BtnSpec {
+      label: string;
+      fontSize: string;
+      palette: Omit<PauseBtn, 'text' | 'activate'>;
+      padding: { x: number; y: number };
+      activate: () => void;
+    }
+    const greenPalette = {
+      idleColor: '#8aff8a',
+      hoverColor: '#ffffff',
+      idleBg: '#2a3a2a',
+      hoverBg: '#3f5a3f',
+    };
+    const bluePalette = {
+      idleColor: '#8acfff',
+      hoverColor: '#ffffff',
+      idleBg: '#2a3440',
+      hoverBg: '#3f4a5a',
+    };
+    const redPalette = {
+      idleColor: '#ff8a8a',
+      hoverColor: '#ffffff',
+      idleBg: '#3a2a2a',
+      hoverBg: '#5a3f3f',
+    };
+    const PRIMARY_PADDING = { x: 36, y: 16 };
+    const SECONDARY_PADDING = { x: 30, y: 14 };
+    const specs: BtnSpec[] = [
       {
-        idleColor: '#8aff8a',
-        hoverColor: '#ffffff',
-        idleBg: '#2a3a2a',
-        hoverBg: '#3f5a3f',
+        label: '[ RESUME ]',
+        fontSize: '34px',
+        palette: greenPalette,
+        padding: PRIMARY_PADDING,
+        activate: () => this.closePauseMenu(),
       },
-      { x: 24, y: 10 },
-      () => this.closePauseMenu(),
-    );
-    const audio = mkBtn(
-      height / 2,
-      '[ SETTINGS ]',
-      '22px',
       {
-        idleColor: '#8acfff',
-        hoverColor: '#ffffff',
-        idleBg: '#2a3440',
-        hoverBg: '#3f4a5a',
+        label: '[ SETTINGS ]',
+        fontSize: '28px',
+        palette: bluePalette,
+        padding: SECONDARY_PADDING,
+        activate: () => this.buildPauseMenuAudio(),
       },
-      { x: 20, y: 8 },
-      () => this.buildPauseMenuAudio(),
-    );
-    const quit = mkBtn(
-      height / 2 + 70,
-      '[ ABANDON RUN ]',
-      '22px',
-      {
-        idleColor: '#ff8a8a',
-        hoverColor: '#ffffff',
-        idleBg: '#3a2a2a',
-        hoverBg: '#5a3f3f',
-      },
-      { x: 20, y: 8 },
-      () => {
+    ];
+    if (canFullscreen()) {
+      specs.push({
+        label: isFullscreenActive() ? '[ EXIT FULLSCREEN ]' : '[ FULLSCREEN ]',
+        fontSize: '28px',
+        palette: bluePalette,
+        padding: SECONDARY_PADDING,
+        activate: () => {
+          this.closePauseMenu();
+          this.scale.toggleFullscreen();
+        },
+      });
+    }
+    specs.push({
+      label: '[ ABANDON RUN ]',
+      fontSize: '28px',
+      palette: redPalette,
+      padding: SECONDARY_PADDING,
+      activate: () => {
         this.closePauseMenu();
         this.abortRun();
       },
-    );
+    });
 
-    const buttons: PauseBtn[] = [resume, audio, quit];
-    container.add([bg, resume.text, audio.text, quit.text]);
+    const SPACING = 90;
+    const startY = height / 2 - ((specs.length - 1) * SPACING) / 2;
+    const buttons: PauseBtn[] = specs.map((s, i) =>
+      mkBtn(startY + i * SPACING, s.label, s.fontSize, s.palette, s.padding, s.activate),
+    );
+    container.add([bg, ...buttons.map((b) => b.text)]);
+
+    // iOS hint — passive text below the button stack. Only when on iOS
+    // (no working fullscreen API) and not already running as a PWA.
+    if (isIosBrowser() && !canFullscreen() && !isStandalonePWA()) {
+      const hintY = startY + specs.length * SPACING;
+      const hint = this.add
+        .text(width / 2, hintY, 'iOS: Add to Home Screen for fullscreen', {
+          fontFamily: FONT,
+          fontSize: '16px',
+          color: '#9aa9a9',
+        })
+        .setOrigin(0.5);
+      container.add(hint);
+    }
     this.addPauseCloseButton(container);
     this.pauseMenuContainer = container;
 

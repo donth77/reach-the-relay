@@ -5,6 +5,7 @@ import { FONT, isTouchDevice } from './ui';
 import { playSfx } from './audio';
 import { buildAudioSettingsPanel } from './audioSettingsPanel';
 import { stopOtherScenes } from './scenes';
+import { canFullscreen, isFullscreenActive, isIosBrowser, isStandalonePWA } from './fullscreen';
 
 /**
  * Shared ESC menu for non-title, non-combat scenes. CombatScene still has its
@@ -27,7 +28,7 @@ export interface PauseMenuOptions {
   buttonCorner?: 'top-right' | 'top-left';
 }
 
-type RowId = 'resume' | 'settings' | 'abandon' | 'quit' | 'back';
+type RowId = 'resume' | 'settings' | 'fullscreen' | 'abandon' | 'quit' | 'back';
 
 interface Row {
   id: RowId;
@@ -46,9 +47,9 @@ interface OpenMenu {
   inSettings: boolean;
 }
 
-const ROW_FONT_SIZE = '32px';
-const CHEVRON_FONT_SIZE = '28px';
-const ROW_SPACING = 56;
+const ROW_FONT_SIZE = '40px';
+const CHEVRON_FONT_SIZE = '36px';
+const ROW_SPACING = 80;
 
 let current: OpenMenu | null = null;
 
@@ -188,6 +189,24 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
     },
   ];
 
+  // Mobile-only fullscreen toggle — only added when the browser will
+  // actually honor the request (Android Chrome / Firefox / etc.). iOS
+  // Safari is filtered out by canFullscreen() and gets a passive hint
+  // rendered below the rows instead.
+  if (canFullscreen()) {
+    rowSpecs.push({
+      id: 'fullscreen',
+      label: isFullscreenActive() ? 'Exit fullscreen' : 'Fullscreen',
+      activate: () => {
+        playSfx(scene, 'sfx-menu-confirm', 0.4);
+        scene.scale.toggleFullscreen();
+        // Close the menu so the player sees the game right away in the
+        // new mode. If they want to toggle again, ESC reopens.
+        closePauseMenu();
+      },
+    });
+  }
+
   if (canAbandon) {
     // Abandoning a run drops the player back at the Lobby so they can
     // regroup and try a different route / crew without being forced
@@ -231,6 +250,26 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
   });
 
   const rows = createRows(scene, container, width, height, rowSpecs);
+
+  // iOS hint — passive text below the row stack. Only shown on iOS
+  // browsers where the Fullscreen API is unavailable for non-video
+  // elements; the toggle button above is hidden in this case
+  // (canFullscreen() returns false). Suppressed when the page is
+  // already a standalone PWA.
+  if (isIosBrowser() && !canFullscreen() && !isStandalonePWA()) {
+    const totalHeight = (rowSpecs.length - 1) * ROW_SPACING;
+    const lastRowY = height / 2 + totalHeight / 2;
+    const hint = scene.add
+      .text(width / 2, lastRowY + 56, 'iOS: Add to Home Screen for fullscreen', {
+        fontFamily: FONT,
+        fontSize: '16px',
+        color: '#9aa9a9',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0);
+    container.add(hint);
+  }
+
   current = {
     scene,
     container,
@@ -280,8 +319,11 @@ function buildSettingsSubmenu(scene: Phaser.Scene, opts: PauseMenuOptions): void
     },
   ]);
   // Push the single Back row to the bottom.
-  rows[0].text.setY(height / 2 + 160);
-  rows[0].chevron.setY(height / 2 + 160);
+  // Back row sits below the slider stack with comfortable clearance —
+  // the larger settings sliders push the bottom of the stack down to
+  // ~height/2 + 144, so this needs ~80px of breathing room.
+  rows[0].text.setY(height / 2 + 240);
+  rows[0].chevron.setY(height / 2 + 240);
   rows[0].chevron.setX(rows[0].text.x - rows[0].text.width / 2 - 18);
 
   current = {

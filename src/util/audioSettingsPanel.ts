@@ -30,9 +30,9 @@ export function buildAudioSettingsPanel(
   cx: number,
   cy: number,
 ): void {
-  const ROW_SPACING = 60;
-  const SECTION_HEADER_GAP = 42; // header to first row of its section
-  const SECTION_GAP = 60; // last row of prev section to next section header
+  const ROW_SPACING = 72;
+  const SECTION_HEADER_GAP = 50; // header to first row of its section
+  const SECTION_GAP = 72; // last row of prev section to next section header
 
   const audioRow = (label: string, cat: AudioCategory): SliderRow => ({
     label,
@@ -90,19 +90,19 @@ function addSectionHeader(
   cy: number,
   title: string,
 ): void {
-  const TRACK_WIDTH = 300;
+  const TRACK_WIDTH = 360;
   // Left-aligned to the same column as the slider label so the section feels
   // anchored above its rows.
   const text = scene.add
-    .text(cx - TRACK_WIDTH / 2 - 100, cy, title, {
+    .text(cx - TRACK_WIDTH / 2 - 130, cy, title, {
       fontFamily: FONT,
-      fontSize: '20px',
+      fontSize: '26px',
       color: '#8aff8a',
     })
     .setOrigin(0.5);
   // Thin underline rule across the panel width — visually delimits the
   // section without being heavy.
-  const rule = scene.add.rectangle(cx, cy + 16, TRACK_WIDTH + 200, 1, 0x2a4a2a, 1).setOrigin(0.5);
+  const rule = scene.add.rectangle(cx, cy + 20, TRACK_WIDTH + 240, 1, 0x2a4a2a, 1).setOrigin(0.5);
   container.add([text, rule]);
 }
 
@@ -113,14 +113,14 @@ function addSlider(
   cy: number,
   row: SliderRow,
 ): void {
-  const TRACK_WIDTH = 300;
-  const TRACK_HEIGHT = 10;
-  const KNOB_RADIUS = 12;
+  const TRACK_WIDTH = 360;
+  const TRACK_HEIGHT = 14;
+  const KNOB_RADIUS = 16;
 
   const labelText = scene.add
-    .text(cx - TRACK_WIDTH / 2 - 110, cy, row.label, {
+    .text(cx - TRACK_WIDTH / 2 - 130, cy, row.label, {
       fontFamily: FONT,
-      fontSize: '24px',
+      fontSize: '30px',
       color: '#e6e6e6',
     })
     .setOrigin(0.5);
@@ -131,9 +131,9 @@ function addSlider(
     .setOrigin(0, 0.5);
   const knob = scene.add.circle(cx, cy, KNOB_RADIUS, 0xe6e6e6, 1).setStrokeStyle(2, 0x111111);
   const valueText = scene.add
-    .text(cx + TRACK_WIDTH / 2 + 65, cy, '', {
+    .text(cx + TRACK_WIDTH / 2 + 80, cy, '', {
       fontFamily: FONT,
-      fontSize: '22px',
+      fontSize: '26px',
       color: '#cfcfcf',
     })
     .setOrigin(0.5);
@@ -152,7 +152,7 @@ function addSlider(
   refresh(row.get());
 
   const hit = scene.add
-    .rectangle(cx, cy, TRACK_WIDTH + KNOB_RADIUS * 2, 44, 0x000000, 0)
+    .rectangle(cx, cy, TRACK_WIDTH + KNOB_RADIUS * 2, 56, 0x000000, 0)
     .setInteractive({ useHandCursor: true, draggable: true });
 
   const setFromPointer = (pointer: Phaser.Input.Pointer): void => {
