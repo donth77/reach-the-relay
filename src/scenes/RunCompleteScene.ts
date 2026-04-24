@@ -42,6 +42,21 @@ interface SceneData {
   reason?: string;
 }
 
+/**
+ * Leaderboard-fair duration. Total wall-clock minus actual combat
+ * wall-clock plus normalized combat time (per-tick `dt * atbSpeed`
+ * accumulation). Effect: lobby/menu/journey/rest time submits as-is,
+ * combat time is rescaled to its 1.0×-ATB equivalent. Players using
+ * the slider for accessibility are neither rewarded nor punished on the
+ * tiebreaker, and changing the slider at submit time can't game it
+ * because accumulation is integrated tick-by-tick during combat.
+ */
+function computeNormalizedDurationSec(run: ReturnType<typeof getRun>): number {
+  const totalWallClockSec = (Date.now() - run.startedAt) / 1000;
+  const nonCombatSec = Math.max(0, totalWallClockSec - run.combatWallClockSecAccum);
+  return Math.max(0, Math.floor(nonCombatSec + run.combatTimeSecAccum));
+}
+
 export class RunCompleteScene extends Phaser.Scene {
   private outcome: 'victory' | 'defeat' = 'victory';
   private reason: string = '';
@@ -457,7 +472,7 @@ export class RunCompleteScene extends Phaser.Scene {
       rankText.setColor('#888');
       return;
     }
-    const durationSec = Math.max(0, Math.floor((Date.now() - run.startedAt) / 1000));
+    const durationSec = computeNormalizedDurationSec(run);
     const result = await submitScore({
       username,
       score,
@@ -483,7 +498,7 @@ export class RunCompleteScene extends Phaser.Scene {
   private async runDebugProdSubmit(finalScore: number): Promise<void> {
     const run = getRun();
     const username = getUsername() ?? `debug_${Math.random().toString(36).slice(2, 8)}`;
-    const durationSec = Math.max(0, Math.floor((Date.now() - run.startedAt) / 1000));
+    const durationSec = computeNormalizedDurationSec(run);
     const result = await submitScore({
       username,
       score: finalScore,

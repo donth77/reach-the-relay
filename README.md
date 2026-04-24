@@ -25,7 +25,8 @@ Pick a leader. Recruit a crew of three from the Greenhouse commune. Choose a rou
 - ATB combat with elemental vulnerabilities (🔥 thermal / ❄ coolant / ⚡ surge), criticals, and ability targeting
 - Walkable lobby — recruit survivors, study the map, plan your run
 - Rest stops that replenish abilities and patch up your crew
-- Global leaderboard — submit a callsign or play anonymously
+- Adjustable ATB speed (Settings → GAMEPLAY) for accessibility / pacing preference
+- Global leaderboard — submit a callsign or play anonymously. Time is normalized for ATB-speed setting so the slider doesn't skew the tiebreaker
 
 ## Controls
 

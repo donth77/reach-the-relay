@@ -60,7 +60,7 @@ src/
     briefing.ts                   mission-briefing copy (title, lead, sections, lore)
     classBlurbs.ts                short lore lines shown in NPC dialogue modal
   state/
-    run.ts                        active-run state (party, route, encounter index, HP/MP, VIP HP, inventory, abilityUsesRemaining)
+    run.ts                        active-run state (party, route, encounter index, HP/MP, VIP HP, inventory, abilityUsesRemaining, combat-time accumulators for normalized leaderboard duration)
     lobby.ts                      pre-run state (leader, recruits, last lobby pose) — survives LeaderSelect → Lobby → Route transitions
     player.ts                     persistent username (localStorage) + `ingestUrlUsername()` for `?username=<name>` portal ingest
     leaderboard.ts                submit/fetch adapter with localStorage fallback; exports `ROUTE_BONUS_BY_DIFFICULTY` (easy 100 / medium 400 / hard 800)
@@ -77,7 +77,8 @@ src/
     audio.ts                      initAudioSettings + getVol/setVol (master/music/sfx categories) + stopAllMusic
     music.ts                      playMusicPool — plays a random pool member, re-picks on loop end
     musicToggle.ts                title-screen DOM mute button (48×48 a11y target, persisted to localStorage)
-    audioSettingsPanel.ts         shared volume sliders panel (used by pause menu + combat pause)
+    audioSettingsPanel.ts         shared SETTINGS panel — VOLUME (master/music/sfx) + GAMEPLAY (ATB SPEED). Name is historical; covers more than audio now
+    combatSettings.ts             `getAtbSpeed/setAtbSpeed` — user-facing ATB pacing multiplier (0.5–2.0×, default 1.0), cached in-memory + persisted to localStorage as `combat:atb-speed`
     pauseMenu.ts                  shared ESC pause menu used by all non-title, non-combat scenes
     briefingModal.ts              shared mission-briefing modal (Title / Lobby map / Dr. Vey NPC)
     usernamePrompt.ts             shared callsign-entry modal for leaderboard; scenes gate ESC via `isUsernamePromptOpen()`
@@ -221,6 +222,7 @@ finalScore = baseScore + ROUTE_BONUS_BY_DIFFICULTY[run.route.difficulty]
 - **Submit is opt-in**: on victory `RunCompleteScene` shows a `[ SUBMIT SCORE ]` button. First submit opens `usernamePrompt.ts` to capture a callsign; subsequent runs auto-submit under the stored name. Cancel at any stage is fine — leaderboard never blocks progression.
 - **Username**: persisted via `state/player.ts` (localStorage key `player:username`). Regex is `/^[A-Za-z0-9 _]{1,16}$/` — server-side validation in `worker/src/index.ts` must match.
 - Tie-break is `score DESC, duration_sec ASC` (faster clears win ties).
+- **`duration_sec` is normalized, not raw wall-clock.** CombatScene's update accumulates two values onto `RunState`: `combatWallClockSecAccum += dt` and `combatTimeSecAccum += dt * atbSpeed`. `RunCompleteScene.computeNormalizedDurationSec(run)` returns `(totalWallClock - combatWallClock) + combatTime` — i.e. lobby/menu/journey/rest time submits as raw seconds, combat time is rescaled to its 1.0×-ATB equivalent. Per-tick integration means mid-run speed changes are correctly weighted and the slider can't be exploited at submit time. The displayed time on the leaderboard is the normalized time, not the player's stopwatch — by design.
 
 ## Asset generation pipeline
 

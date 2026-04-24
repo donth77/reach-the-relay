@@ -23,6 +23,17 @@ export interface RunState {
   // Unix-ms timestamp of run start. Used on victory to compute duration_sec
   // for the leaderboard submission.
   startedAt: number;
+  // Combat-time accumulators for ATB-speed-normalized leaderboard duration.
+  // Each combat tick adds `dt` to wallClock and `dt * atbSpeed` to normalized.
+  // Submit-time formula: `(totalWallClock - combatWallClockSecAccum) +
+  // combatTimeSecAccum`. Ensures the slider is a fully free accessibility
+  // knob without skewing the duration tiebreaker — a 2.0× run takes half
+  // the real combat time, but multiplying that wall-clock by 2.0 yields
+  // its 1.0×-equivalent. Ungameable: speed changes are integrated
+  // tick-by-tick, so flipping the slider at submit time has no
+  // retroactive effect.
+  combatWallClockSecAccum: number;
+  combatTimeSecAccum: number;
 }
 
 let currentRun: RunState | null = null;
@@ -63,6 +74,8 @@ export function startRun(route: RouteDef, party: string[], leaderId?: string): v
     inventory,
     abilityUsesRemaining,
     startedAt: Date.now(),
+    combatWallClockSecAccum: 0,
+    combatTimeSecAccum: 0,
   };
 }
 

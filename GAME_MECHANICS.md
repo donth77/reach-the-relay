@@ -8,7 +8,8 @@ If you change a number in the data files, update the relevant row here.
 
 ## Combat model
 
-- **ATB (Active Time Battle)** — each unit has an ATB gauge. `ATB_MAX = 100`, filled at `ATB_RATE = 10` per tick, modulated by the unit's `speed`. When a party member's gauge fills, combat pauses and the action menu opens.
+- **ATB (Active Time Battle)** — each unit has an ATB gauge. `ATB_MAX = 100`, filled at `ATB_RATE = 9` per tick, modulated by the unit's `speed`. When a party member's gauge fills, combat pauses and the action menu opens.
+- **ATB SPEED slider** (Settings → GAMEPLAY) — player-facing multiplier on gauge fill rate, 0.5×–2.0×, default 1.0×. Pure pacing knob: doesn't affect damage, HP, decision count, or any balance number — just how long real time passes between gauges filling. The leaderboard duration is normalized so the slider can't be used to game the tiebreaker (see Score / leaderboard).
 - **Party of 3** (leader always included) + **VIP** (Dr. Vey, 35 HP, damage-only — no attacks, no actions). The VIP sits in the back row; most enemies can still target them directly.
 - **Victory** — all enemies KO'd. **Defeat** — VIP KO'd OR all 3 party KO'd.
 
@@ -204,6 +205,12 @@ score = (VIP HP × 2) + Σ (remaining HP of each party member) + ROUTE_BONUS
 - No turn/MP penalty, no item-efficiency bonus.
 
 Maximum possible score for a run = `35×2 + (70 + 65 + 55) + 800 = 260 + 800 = 1060` (VIP + best-three-HP party on the hard route). Easier routes cap lower because the route bonus is smaller. The leaderboard Worker rejects any submission above **1100** (true max + 40pt buffer).
+
+### Leaderboard tiebreaker
+
+Equal scores are broken by `duration_sec ASC` — faster clears win ties.
+
+The submitted `duration_sec` is **normalized**, not raw wall-clock: combat time is rescaled to its 1.0×-ATB-speed equivalent, while non-combat time (lobby, route picking, journey, rest scenes, pause-menu time) submits as raw wall-clock. Net effect: the **ATB SPEED slider is a free accessibility/preference knob** — a player at 0.5× and a player at 2.0× making the same decisions submit the same duration. Per-tick integration during combat means mid-run speed changes are handled correctly and the slider can't be exploited by flipping it right before submitting. Implementation: `combatTimeSecAccum` / `combatWallClockSecAccum` on `RunState`, computed in `RunCompleteScene.computeNormalizedDurationSec`.
 
 ---
 

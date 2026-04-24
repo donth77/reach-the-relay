@@ -8,6 +8,7 @@ import { log, copyLogToClipboard } from '../util/logger';
 import { playMusicPool } from '../util/music';
 import { playSfx } from '../util/audio';
 import { buildAudioSettingsPanel } from '../util/audioSettingsPanel';
+import { getAtbSpeed } from '../util/combatSettings';
 import { drawFromBag } from '../util/bag';
 import { FONT, isTouchDevice } from '../util/ui';
 import {
@@ -467,9 +468,21 @@ export class CombatScene extends Phaser.Scene {
 
     if (this.combatOver || this.waitMode) return;
     const dt = delta / 1000;
+    const atbSpeed = getAtbSpeed();
+    // Accumulate normalized + wall-clock combat time so the leaderboard
+    // duration can be computed independent of ATB-speed setting at submit.
+    if (hasRun()) {
+      const r = getRun();
+      r.combatWallClockSecAccum += dt;
+      // Normalized = wall-clock × atbSpeed. A 2.0× run takes half the
+      // wall-clock per gauge-fill, so multiplying back by 2 yields the
+      // 1.0×-equivalent time. A 0.5× run takes double, multiplying by
+      // 0.5 brings it back to parity.
+      r.combatTimeSecAccum += dt * atbSpeed;
+    }
     for (const u of this.units) {
       if (u.ko || u.side === 'vip') continue;
-      u.atb = Math.min(ATB_MAX, u.atb + u.speed * ATB_RATE * u.atbModifier * dt);
+      u.atb = Math.min(ATB_MAX, u.atb + u.speed * ATB_RATE * u.atbModifier * atbSpeed * dt);
       this.updatePanelRow(u);
       if (u.atb >= ATB_MAX) {
         if (u.side === 'party') this.beginPartyTurn(u);
@@ -4007,7 +4020,7 @@ export class CombatScene extends Phaser.Scene {
     );
     const audio = mkBtn(
       height / 2,
-      '[ AUDIO SETTINGS ]',
+      '[ SETTINGS ]',
       '22px',
       {
         idleColor: '#8acfff',

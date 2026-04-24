@@ -180,7 +180,7 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
     },
     {
       id: 'settings',
-      label: 'Audio settings',
+      label: 'Settings',
       activate: () => {
         playSfx(scene, 'sfx-menu-confirm', 0.4);
         buildSettingsSubmenu(scene, opts);
