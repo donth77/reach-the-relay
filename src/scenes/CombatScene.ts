@@ -14,6 +14,7 @@ import {
   isFullscreenActive,
   isIosBrowser,
   isStandalonePWA,
+  setAutoFullscreenOptOut,
 } from '../util/fullscreen';
 import { drawFromBag } from '../util/bag';
 import { FONT, isTouchDevice } from '../util/ui';
@@ -4064,6 +4065,9 @@ export class CombatScene extends Phaser.Scene {
         palette: bluePalette,
         padding: SECONDARY_PADDING,
         activate: () => {
+          // Remember the user's intent so auto-enter on first gesture
+          // respects it across reloads.
+          setAutoFullscreenOptOut(isFullscreenActive());
           this.closePauseMenu();
           this.scale.toggleFullscreen();
         },

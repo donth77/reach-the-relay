@@ -59,3 +59,64 @@ export function isIosBrowser(): boolean {
   if (/Mac/.test(ua) && navigator.maxTouchPoints > 1) return true;
   return false;
 }
+
+// --- Auto-enter fullscreen on first gesture (mobile only) -----------------
+// Browsers gate requestFullscreen() to a user-activation, so we can't call
+// it on page load. Instead, arm a one-shot listener that triggers on the
+// first tap/keypress. Respects an opt-out flag set when the user explicitly
+// exits fullscreen via the pause-menu toggle — we don't want to yank them
+// back in on the next tap.
+
+const AUTO_FS_OPT_OUT_KEY = 'fullscreen:auto-disabled';
+
+function isAutoFullscreenDisabled(): boolean {
+  try {
+    return localStorage.getItem(AUTO_FS_OPT_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Call when the user manually exits fullscreen via the pause menu toggle.
+ * Prevents auto-enter on the next first-gesture — they told us no.
+ */
+export function setAutoFullscreenOptOut(optOut: boolean): void {
+  try {
+    if (optOut) localStorage.setItem(AUTO_FS_OPT_OUT_KEY, '1');
+    else localStorage.removeItem(AUTO_FS_OPT_OUT_KEY);
+  } catch {
+    // Ignore quota / disabled-storage — auto behavior just won't persist.
+  }
+}
+
+/**
+ * Install a one-shot first-gesture listener that enters fullscreen on
+ * eligible mobile browsers. No-op on desktop, iOS (no API), when already
+ * fullscreen, when the user previously opted out, or when running as a PWA.
+ */
+export function initAutoFullscreenOnFirstGesture(): void {
+  if (typeof window === 'undefined') return;
+  if (!canFullscreen()) return;
+  if (isStandalonePWA()) return;
+  if (isAutoFullscreenDisabled()) return;
+
+  const tryEnter = (): void => {
+    if (isFullscreenActive()) return;
+    const el = document.documentElement;
+    try {
+      const p = el.requestFullscreen?.();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {
+      // Some browsers throw synchronously when the gesture has already
+      // been consumed. Silent fail — the pause-menu toggle still works.
+    }
+  };
+  const onFirstGesture = (): void => {
+    tryEnter();
+    window.removeEventListener('pointerdown', onFirstGesture);
+    window.removeEventListener('keydown', onFirstGesture);
+  };
+  window.addEventListener('pointerdown', onFirstGesture, { once: true });
+  window.addEventListener('keydown', onFirstGesture, { once: true });
+}

@@ -18,6 +18,7 @@ import { LeaderboardScene } from './scenes/LeaderboardScene';
 import { mountDebugBadge, mountDebugCollisionToggle } from './util/logger';
 import { initAudioSettings } from './util/audio';
 import { initOrientationLock } from './util/orientationLock';
+import { initAutoFullscreenOnFirstGesture } from './util/fullscreen';
 import { ingestUrlUsername } from './state/player';
 
 // Portal entry support: if the page was loaded with `?username=<name>`,
@@ -62,3 +63,4 @@ initAudioSettings(game);
 mountDebugBadge();
 mountDebugCollisionToggle();
 initOrientationLock();
+initAutoFullscreenOnFirstGesture();

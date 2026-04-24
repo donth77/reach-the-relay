@@ -250,6 +250,13 @@ export class RouteMapScene extends Phaser.Scene {
     const startY = this.input.activePointer.y;
     const armGate = (pointer: Phaser.Input.Pointer) => {
       if (hoverArmed) return;
+      // Touch pointers don't need arming — the gate exists purely to stop
+      // a mouse cursor parked over a route at scene-mount from instantly
+      // focusing it. On touch, a synthetic pointermove between pointerdown
+      // and pointerup would arm the gate AND focusOverlay(idx), so the
+      // overlay's pointerup toggle sees `focusedIdx === idx` and deselects
+      // — producing a first-tap flicker that forces a double-tap.
+      if (pointer.wasTouch) return;
       const dx = pointer.x - startX;
       const dy = pointer.y - startY;
       if (dx * dx + dy * dy >= ARM_DISTANCE_PX * ARM_DISTANCE_PX) {

@@ -5,7 +5,13 @@ import { FONT, isTouchDevice } from './ui';
 import { playSfx } from './audio';
 import { buildAudioSettingsPanel } from './audioSettingsPanel';
 import { stopOtherScenes } from './scenes';
-import { canFullscreen, isFullscreenActive, isIosBrowser, isStandalonePWA } from './fullscreen';
+import {
+  canFullscreen,
+  isFullscreenActive,
+  isIosBrowser,
+  isStandalonePWA,
+  setAutoFullscreenOptOut,
+} from './fullscreen';
 
 /**
  * Shared ESC menu for non-title, non-combat scenes. CombatScene still has its
@@ -199,6 +205,11 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
       label: isFullscreenActive() ? 'Exit fullscreen' : 'Fullscreen',
       activate: () => {
         playSfx(scene, 'sfx-menu-confirm', 0.4);
+        // Remember the user's intent so the auto-enter on first-gesture
+        // respects it across reloads: exiting opts out, re-entering via
+        // the menu opts back in.
+        const exiting = isFullscreenActive();
+        setAutoFullscreenOptOut(exiting);
         scene.scale.toggleFullscreen();
         // Close the menu so the player sees the game right away in the
         // new mode. If they want to toggle again, ESC reopens.
