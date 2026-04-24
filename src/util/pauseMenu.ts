@@ -263,7 +263,7 @@ function buildMainMenu(scene: Phaser.Scene, opts: PauseMenuOptions): void {
       .text(width / 2, lastRowY + 56, 'iOS: Add to Home Screen for fullscreen', {
         fontFamily: FONT,
         fontSize: '16px',
-        color: '#9aa9a9',
+        color: '#5a6868',
       })
       .setOrigin(0.5)
       .setScrollFactor(0);
