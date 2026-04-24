@@ -81,6 +81,7 @@ Built for Vibe Jam 2026.
 
 - Engines / tools: Phaser 4, Vite, TypeScript, Claude Code
 - Asset generation: SpriteCook, PixelLab, ElevenLabs, Suno, Hugging Face Z-Image Turbo, Google Gemini / Nano Banana
+- Soundtrack: [Reach the Relay (Suno playlist)](https://suno.com/playlist/c551fa6b-90e2-47a4-bc1f-551846b1f255)
 - Font: [Silkscreen](https://fonts.google.com/specimen/Silkscreen) by Jason Kottke (SIL OFL 1.1)
 
 ## License
