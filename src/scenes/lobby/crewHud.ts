@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { FONT, keyHintLabel } from '../../util/ui';
+import { FONT, isTouchDevice } from '../../util/ui';
 import { CLASSES } from '../../data/classes';
 import { getLobbyState } from '../../state/lobby';
 
@@ -12,21 +12,35 @@ import { getLobbyState } from '../../state/lobby';
  * have changed (e.g. after an NPC dialogue closes). The HUD polls the
  * state via `refresh()`; LobbyScene should call it each frame (cheap)
  * or on a change event.
+ *
+ * On touch devices the panel and fonts scale up so the roster is
+ * readable on a phone, and the [E] DEPLOY hint becomes a real
+ * tappable button that fires `onDeploy` when the party is full.
  */
 
 const VIP_NAME = 'DR. VEY';
 
-const PANEL_W = 260;
-const PANEL_H = 180;
-const MARGIN = 16;
-
 export class CrewHud {
   private container: Phaser.GameObjects.Container;
   private rowTexts: Phaser.GameObjects.Text[] = [];
-  private deployHint?: Phaser.GameObjects.Text;
+  private deployBtnBg?: Phaser.GameObjects.Rectangle;
+  private deployBtnLabel?: Phaser.GameObjects.Text;
   private lastSignature = '';
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, onDeploy?: () => void) {
+    const isTouch = isTouchDevice();
+    const PANEL_W = isTouch ? 360 : 260;
+    const PANEL_H = isTouch ? 240 : 180;
+    const MARGIN = 16;
+    const labelSize = isTouch ? '20px' : '14px';
+    const vipSize = isTouch ? '28px' : '20px';
+    const rowSize = isTouch ? '22px' : '16px';
+    const padTop = isTouch ? 16 : 12;
+    const vipValueY = isTouch ? 44 : 32;
+    const crewLabelY = isTouch ? 104 : 72;
+    const crewRowY = isTouch ? 134 : 94;
+    const rowStep = isTouch ? 30 : 22;
+
     const { width } = scene.scale;
     const panelX = width - MARGIN - PANEL_W / 2;
     const panelY = MARGIN + PANEL_H / 2;
@@ -41,7 +55,7 @@ export class CrewHud {
     // L-bracket corners matching the terminal aesthetic.
     const brackets = scene.add.graphics().setScrollFactor(0);
     brackets.lineStyle(2, 0x8aff8a, 1);
-    const armLen = 14;
+    const armLen = isTouch ? 18 : 14;
     const left = panelX - PANEL_W / 2;
     const right = panelX + PANEL_W / 2;
     const top = panelY - PANEL_H / 2;
@@ -69,11 +83,11 @@ export class CrewHud {
     this.container.add(brackets);
 
     // Section labels — static (don't change with state).
-    const contentX = left + 16;
+    const contentX = left + (isTouch ? 20 : 16);
     const vipLabel = scene.add
-      .text(contentX, top + 12, 'VIP', {
+      .text(contentX, top + padTop, 'VIP', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: labelSize,
         color: '#6aaa8a',
       })
       .setOrigin(0, 0)
@@ -81,9 +95,9 @@ export class CrewHud {
     this.container.add(vipLabel);
 
     const vipValue = scene.add
-      .text(contentX, top + 32, VIP_NAME, {
+      .text(contentX, top + vipValueY, VIP_NAME, {
         fontFamily: FONT,
-        fontSize: '20px',
+        fontSize: vipSize,
         color: '#ffcc66',
       })
       .setOrigin(0, 0)
@@ -91,9 +105,9 @@ export class CrewHud {
     this.container.add(vipValue);
 
     const crewLabel = scene.add
-      .text(contentX, top + 72, 'CREW', {
+      .text(contentX, top + crewLabelY, 'CREW', {
         fontFamily: FONT,
-        fontSize: '14px',
+        fontSize: labelSize,
         color: '#6aaa8a',
       })
       .setOrigin(0, 0)
@@ -103,9 +117,9 @@ export class CrewHud {
     // Pre-create 3 crew rows (leader + 2 recruit slots) to update in refresh().
     for (let i = 0; i < 3; i++) {
       const row = scene.add
-        .text(contentX, top + 94 + i * 22, '', {
+        .text(contentX, top + crewRowY + i * rowStep, '', {
           fontFamily: FONT,
-          fontSize: '16px',
+          fontSize: rowSize,
           color: '#a6ffc6',
         })
         .setOrigin(0, 0)
@@ -114,24 +128,47 @@ export class CrewHud {
       this.rowTexts.push(row);
     }
 
-    // Deploy hint — sits BELOW the HUD panel so it doesn't crowd the
-    // crew list. Only visible when the party is full (3 members).
-    this.deployHint = scene.add
-      .text(panelX, bot + 14, keyHintLabel('[E] DEPLOY'), {
-        fontFamily: FONT,
-        fontSize: '16px',
-        color: '#8affaa',
-        backgroundColor: '#05141099',
-        padding: { x: 10, y: 6 },
-      })
-      .setOrigin(0.5, 0)
+    // Deploy button — sits BELOW the HUD panel so it doesn't crowd the
+    // crew list. Only visible when the party is full (3 members). On
+    // touch it's a real tappable button that fires `onDeploy`; on
+    // desktop the [E] hint is enough since the keyboard handler does
+    // the work.
+    const btnW = isTouch ? PANEL_W - 16 : 160;
+    const btnH = isTouch ? 64 : 36;
+    const btnY = bot + 18 + btnH / 2;
+    const btnLabel = isTouch ? 'DEPLOY' : '[E] DEPLOY';
+    const btnFontSize = isTouch ? '28px' : '16px';
+
+    this.deployBtnBg = scene.add
+      .rectangle(panelX, btnY, btnW, btnH, 0x0a3018, 0.95)
+      .setStrokeStyle(2, 0x8aff8a, 1)
       .setScrollFactor(0)
       .setDepth(10000)
       .setVisible(false);
+    if (isTouch && onDeploy) {
+      this.deployBtnBg.setInteractive({ useHandCursor: true }).on('pointerup', () => {
+        if (!this.deployBtnBg?.visible) return;
+        onDeploy();
+      });
+    }
+    this.container.add(this.deployBtnBg);
+
+    this.deployBtnLabel = scene.add
+      .text(panelX, btnY, btnLabel, {
+        fontFamily: FONT,
+        fontSize: btnFontSize,
+        color: '#8affaa',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(10001)
+      .setVisible(false);
+    this.container.add(this.deployBtnLabel);
+
     // Subtle pulse to draw attention once the party is complete.
     scene.tweens.add({
-      targets: this.deployHint,
-      alpha: 0.55,
+      targets: [this.deployBtnBg, this.deployBtnLabel],
+      alpha: 0.6,
       duration: 700,
       yoyo: true,
       repeat: -1,
@@ -167,9 +204,10 @@ export class CrewHud {
       rt.setColor(row.color);
     });
 
-    // Deploy hint visible iff party is full (leader + 2 recruits).
+    // Deploy button visible iff party is full (leader + 2 recruits).
     const partyFull = !!leader && recruits.length >= 2;
-    this.deployHint?.setVisible(partyFull);
+    this.deployBtnBg?.setVisible(partyFull);
+    this.deployBtnLabel?.setVisible(partyFull);
   }
 
   private slotForRecruit(classId: string | undefined): {

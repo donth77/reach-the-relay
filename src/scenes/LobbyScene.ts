@@ -521,7 +521,7 @@ export class LobbyScene extends Phaser.Scene {
       window.removeEventListener('keyup', domKeyUp, true);
     });
 
-    this.crewHud = new CrewHud(this);
+    this.crewHud = new CrewHud(this, openTerminal);
     // Proximity-gated interaction: pressing E/Enter/Space only opens
     // PartySelect when the player is standing next to the terminal.
     // Interaction dispatcher. CLOSEST in-range interactable wins —
