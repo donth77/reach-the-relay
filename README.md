@@ -1,5 +1,7 @@
 # Reach the Relay
 
+![Reach the Relay](public/og-image.png)
+
 A turn-based RPG set in the ruins of an AI apocalypse, built for **Vibe Jam 2026**. SNES-era FF6 / Dragon Quest III inspired, ATB combat, built in Phaser 4 + TypeScript.
 
 > The AIs turned on their human counterparts. Most of the world didn't make it.
@@ -11,6 +13,8 @@ A turn-based RPG set in the ruins of an AI apocalypse, built for **Vibe Jam 2026
 > That's where your crew comes in.
 
 **▶ Play it: [reach-the-relay.pages.dev](https://reach-the-relay.pages.dev)**
+
+<a href="https://fynbosexplorer.itch.io/reach-the-relay"><img src="https://static.itch.io/images/badge-color.svg" alt="Available on itch.io" height="60"></a>
 
 ---
 
