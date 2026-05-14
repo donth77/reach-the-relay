@@ -256,7 +256,11 @@ export class RouteMapScene extends Phaser.Scene {
       // and pointerup would arm the gate AND focusOverlay(idx), so the
       // overlay's pointerup toggle sees `focusedIdx === idx` and deselects
       // — producing a first-tap flicker that forces a double-tap.
-      if (pointer.wasTouch) return;
+      // `touchLayout` (= isTouchDevice()) is the authoritative gate;
+      // `pointer.wasTouch` can flip to false mid-tap on browsers that
+      // synthesize ghost mouse events from a touch, which is what made
+      // the previous `wasTouch`-only guard slip through.
+      if (touchLayout || pointer.wasTouch) return;
       const dx = pointer.x - startX;
       const dy = pointer.y - startY;
       if (dx * dx + dy * dy >= ARM_DISTANCE_PX * ARM_DISTANCE_PX) {
@@ -524,8 +528,11 @@ export class RouteMapScene extends Phaser.Scene {
         // pointerout fires on release, which would un-focus the route
         // as soon as the player lifts their finger. Mobile focus is
         // driven entirely from pointerup (and the scene-level
-        // "tap outside to deselect" handler).
-        if (pointer.wasTouch) return;
+        // "tap outside to deselect" handler). Use `touchLayout` (=
+        // isTouchDevice) as the authoritative gate since
+        // `pointer.wasTouch` can flip to false on browsers that
+        // synthesize a ghost mousedown from the same tap.
+        if (touchLayout || pointer.wasTouch) return;
         // Ignore the synthetic pointerover Phaser fires when the scene
         // mounts with the cursor already over this overlay — player
         // never actually hovered. Unlocks as soon as they move.
@@ -533,7 +540,7 @@ export class RouteMapScene extends Phaser.Scene {
         focusOverlay(idx);
       });
       overlay.on('pointerout', (pointer: Phaser.Input.Pointer) => {
-        if (pointer.wasTouch) return;
+        if (touchLayout || pointer.wasTouch) return;
         // Only clear focus if THIS overlay is what's focused. Keyboard
         // / arrow-UI cycling can shift focus elsewhere; we don't want
         // a stray pointerout from a non-focused overlay to yank the
@@ -541,7 +548,7 @@ export class RouteMapScene extends Phaser.Scene {
         if (focusedIdx === idx) unfocusCurrent();
       });
       overlay.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-        if (pointer.wasTouch) {
+        if (touchLayout || pointer.wasTouch) {
           // Mobile: tap is a toggle for select/deselect. Same route
           // tapped again deselects; a different route switches focus.
           // Commit happens ONLY via the dedicated CONFIRM button.

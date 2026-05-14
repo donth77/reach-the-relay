@@ -139,6 +139,11 @@ export class CrewHud {
     const btnLabel = isTouch ? 'DEPLOY' : '[E] DEPLOY';
     const btnFontSize = isTouch ? '28px' : '16px';
 
+    // Standalone (NOT inside this.container) — the container has
+    // setScrollFactor(0) and Phaser's hit-test for interactive children
+    // inside a scroll-factor-0 container has been flaky. Keeping it
+    // top-level with its own depth + scrollFactor makes the tap reliably
+    // register on mobile.
     this.deployBtnBg = scene.add
       .rectangle(panelX, btnY, btnW, btnH, 0x0a3018, 0.95)
       .setStrokeStyle(2, 0x8aff8a, 1)
@@ -146,12 +151,24 @@ export class CrewHud {
       .setDepth(10000)
       .setVisible(false);
     if (isTouch && onDeploy) {
-      this.deployBtnBg.setInteractive({ useHandCursor: true }).on('pointerup', () => {
+      let consumed = false;
+      const fire = () => {
+        if (consumed) return;
         if (!this.deployBtnBg?.visible) return;
+        consumed = true;
+        // Reset on the next frame so a future tap (e.g. coming back from
+        // PartySelectTerminal) still fires. The pause-launch transition
+        // happens synchronously, so a microtask is enough.
+        scene.time.delayedCall(50, () => {
+          consumed = false;
+        });
         onDeploy();
-      });
+      };
+      this.deployBtnBg
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', fire)
+        .on('pointerup', fire);
     }
-    this.container.add(this.deployBtnBg);
 
     this.deployBtnLabel = scene.add
       .text(panelX, btnY, btnLabel, {
@@ -163,7 +180,6 @@ export class CrewHud {
       .setScrollFactor(0)
       .setDepth(10001)
       .setVisible(false);
-    this.container.add(this.deployBtnLabel);
 
     // Subtle pulse to draw attention once the party is complete.
     scene.tweens.add({
@@ -223,5 +239,10 @@ export class CrewHud {
 
   destroy(): void {
     this.container.destroy();
+    // Deploy button + label are top-level (not in the container) since
+    // Phaser's hit-test for interactive children inside a scrollFactor=0
+    // container is unreliable on touch. Clean them up explicitly.
+    this.deployBtnBg?.destroy();
+    this.deployBtnLabel?.destroy();
   }
 }
